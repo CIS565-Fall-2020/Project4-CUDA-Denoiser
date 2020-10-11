@@ -202,13 +202,13 @@ __host__ __device__ void computeNormals(const Geom &geom, glm::vec3 token, glm::
     }
 }
 
-__host__ __device__ int traverseAABBTree(
+template <bool VisibilityTest> __host__ __device__ int traverseAABBTree(
     const Ray &ray, const AABBTreeNode *tree, int root, const Geom *geoms,
     int ignore1, int ignore2, float *dist, glm::vec3 *normToken
 ) {
     constexpr int geomTestInterval = 8;
 
-    int stack[64], top = 1;
+    int stack[32], top = 1;
     stack[0] = root;
     int candidates[geomTestInterval * 2], numCandidates = 0;
     int counter = 0, resIndex = -1;
@@ -240,6 +240,9 @@ __host__ __device__ int traverseAABBTree(
                 }
                 glm::vec3 tmpNormToken;
                 if (rayGeomIntersection(ray, geoms[geomId], dist, &tmpNormToken)) {
+                    if (VisibilityTest) {
+                        return geomId;
+                    }
                     *normToken = tmpNormToken;
                     resIndex = geomId;
                 }
@@ -255,6 +258,9 @@ __host__ __device__ int traverseAABBTree(
         }
         glm::vec3 tmpNormToken;
         if (rayGeomIntersection(ray, geoms[geomId], dist, &tmpNormToken)) {
+            if (VisibilityTest) {
+                return geomId;
+            }
             *normToken = tmpNormToken;
             resIndex = geomId;
         }

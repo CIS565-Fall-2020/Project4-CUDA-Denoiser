@@ -263,7 +263,7 @@ __global__ void computeIntersections(
 	int hitGeomIndex = -1;
 
 	glm::vec3 normToken;
-	hitGeomIndex = traverseAABBTree(
+	hitGeomIndex = traverseAABBTree<false>(
 		pathSegment.ray, aabbTree, aabbTreeRoot, geoms, pathSegment.lastGeom, -1,
 		&t_min, &normToken
 	);

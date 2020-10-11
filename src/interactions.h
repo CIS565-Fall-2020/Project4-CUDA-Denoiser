@@ -327,7 +327,7 @@ __host__ __device__ void evalBsdf(
 }
 
 
-__host__ __device__ int sceneIntersection(
+__host__ __device__ int visibilityTest(
 	glm::vec3 p1, glm::vec3 p2, int e1, int e2,
 	const Geom *geoms, const AABBTreeNode *tree, int treeRoot
 ) {
@@ -336,7 +336,7 @@ __host__ __device__ int sceneIntersection(
 	ray.origin = p1;
 	ray.direction = p2 - p1;
 	glm::vec3 normalTokenUnused;
-	return traverseAABBTree(ray, tree, treeRoot, geoms, e1, e2, &dist, &normalTokenUnused);
+	return traverseAABBTree<true>(ray, tree, treeRoot, geoms, e1, e2, &dist, &normalTokenUnused);
 }
 __host__ __device__ float balanceHeuristic(float pdf1, float pdf2) {
 	return pdf1 / (pdf1 + pdf2);
@@ -381,7 +381,7 @@ __host__ __device__ void multipleImportanceSampling(
 		geom.triangle.vertices[0] * rand1.x +
 		geom.triangle.vertices[1] * rand1.y +
 		geom.triangle.vertices[2] * (1.0f - rand1.x - rand1.y);
-	if (sceneIntersection(intersect, lightSample, path.lastGeom, geomId, geoms, tree, treeRoot) == -1) {
+	if (visibilityTest(intersect, lightSample, path.lastGeom, geomId, geoms, tree, treeRoot) == -1) {
 		glm::vec3 lightInLight = lightSample - intersect;
 		float sqrDistance = glm::length2(lightInLight);
 		lightInLight = glm::normalize(lightInLight);
@@ -400,10 +400,12 @@ __host__ __device__ void multipleImportanceSampling(
 		ray.direction = lightInBsdf;
 		glm::vec3 normalTokenUnused;
 		float dist = FLT_MAX;
-		int geomHit = traverseAABBTree(ray, tree, treeRoot, geoms, path.lastGeom, -1, &dist, &normalTokenUnused);
-		if (geomHit == geomId) {
-			lightPdfBsdf = dist * dist / (glm::abs(glm::dot(lightInBsdf, lightNormal)) * lightArea);
-			lteBsdf = emission * bsdfBsdf * glm::abs(glm::dot(shadeNormal, lightInBsdf)) / bsdfPdfBsdf;
+		if (rayGeomIntersection(ray, geom, &dist, &normalTokenUnused)) {
+			int geomHit = traverseAABBTree<true>(ray, tree, treeRoot, geoms, path.lastGeom, geomId, &dist, &normalTokenUnused);
+			if (geomHit == -1) {
+				lightPdfBsdf = dist * dist / (glm::abs(glm::dot(lightInBsdf, lightNormal)) * lightArea);
+				lteBsdf = emission * bsdfBsdf * glm::abs(glm::dot(shadeNormal, lightInBsdf)) / bsdfPdfBsdf;
+			}
 		}
 	}
 
