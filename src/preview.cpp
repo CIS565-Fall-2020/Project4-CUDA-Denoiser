@@ -36,6 +36,33 @@ void initTextures() {
     glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 }
 
+void save_img_from_frame() {
+    GLubyte* buffer = new GLubyte[width * height * 4];
+    glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);
+
+    image img(width, height);
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix;
+            pix.x = buffer[4 * index + 2] / 255.0;
+            pix.y = buffer[4 * index + 1] / 255.0;
+            pix.z = buffer[4 * index + 0] / 255.0;
+            img.setPixel(x, height - 1 - y, glm::vec3(pix));
+        }
+    }
+
+    std::string filename = std::string("test");
+    std::ostringstream ss;
+    ss << filename;
+    filename = ss.str();
+
+    // CHECKITOUT
+    img.savePNG(filename);
+    delete buffer;
+}
+
 void initVAO(void) {
     GLfloat vertices[] = {
         -1.0f, -1.0f,
@@ -108,6 +135,8 @@ void cleanupCuda() {
         deleteTexture(&displayImage);
     }
 }
+
+
 
 void initCuda() {
     cudaGLSetGLDevice(0);

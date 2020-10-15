@@ -128,6 +128,33 @@ void saveImage() {
     //img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
+void saveImagePbo(const uchar4* pbo) {
+    
+    float samples = iteration;
+    image img(width, height);
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix;
+            pix.x= pbo[index].x;
+            pix.y= pbo[index].y;
+            pix.z= pbo[index].z;
+            
+            img.setPixel(width - 1 - x, y, glm::vec3(pix));
+        }
+    }
+
+    std::string filename = renderState->imageName;
+    std::ostringstream ss;
+    ss << filename << "." << startTimeString << "." << samples << "samp";
+    filename = ss.str();
+
+    // CHECKITOUT
+    img.savePNG(filename);
+}
+
+
 void runCuda() {
     if (lastLoopIterations != ui_iterations) {
       lastLoopIterations = ui_iterations;
@@ -195,7 +222,8 @@ void runCuda() {
     cudaGLUnmapBufferObject(pbo);
 
     if (ui_saveAndExit) {
-        saveImage();
+        //saveImage();
+        saveImagePbo(pbo_dptr);
         pathtraceFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
@@ -207,10 +235,12 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
       switch (key) {
       case GLFW_KEY_ESCAPE:
         saveImage();
+        
         glfwSetWindowShouldClose(window, GL_TRUE);
         break;
       case GLFW_KEY_S:
         saveImage();
+        save_img_from_frame();
         break;
       case GLFW_KEY_SPACE:
         camchanged = true;
