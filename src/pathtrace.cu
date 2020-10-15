@@ -14,6 +14,8 @@
 #include "intersections.h"
 #include "interactions.h"
 
+#include <device_launch_parameters.h>
+
 #define ERRORCHECK 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
