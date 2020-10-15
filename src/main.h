@@ -42,6 +42,11 @@ extern float ui_normalWeight;
 extern float ui_positionWeight;
 extern bool ui_saveAndExit;
 
+// Jack12 add
+extern int ui_showIdx;
+extern const char* ui_showItem[];
+extern const int ui_ItemNum;
+
 void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);

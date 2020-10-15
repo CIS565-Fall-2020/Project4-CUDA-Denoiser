@@ -30,6 +30,14 @@ float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
 
+// Jack12 add
+int ui_showIdx = 0;
+const const char* ui_showItem[] = {
+    "Image", "IntersectionTime"
+};
+const int ui_ItemNum = 2;
+
+
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
@@ -165,11 +173,15 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
-    if (ui_showGbuffer) {
+    switch (ui_showIdx) {
+        case(0) : showImage(pbo_dptr, iteration);
+        case(1) : showGBuffer(pbo_dptr);
+    }
+    /*if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     } else {
       showImage(pbo_dptr, iteration);
-    }
+    }*/
 
     // unmap buffer object
     cudaGLUnmapBufferObject(pbo);
