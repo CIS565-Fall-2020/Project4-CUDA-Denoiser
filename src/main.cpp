@@ -33,9 +33,11 @@ bool ui_saveAndExit = false;
 // Jack12 add
 int ui_showIdx = 0;
 const const char* ui_showItem[] = {
-    "Image", "IntersectionTime"
+    "Image", 
+    "IntersectionTime",
+    "Normal"
 };
-const int ui_ItemNum = 2;
+const int ui_ItemNum = 3;
 
 
 static bool camchanged = true;
@@ -201,7 +203,7 @@ void runCuda() {
     }
 
     //std::cout << "main: " << ui_showIdx << std::endl;
-    switch (ui_showIdx) {
+    /*switch (ui_showIdx) {
         case(0) : 
             showImage(pbo_dptr, iteration);
             break;
@@ -211,12 +213,13 @@ void runCuda() {
         default:
             std::cout << "unsupported show idx " << ui_showIdx << std::endl;
             break;
-    }
-    /*if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+    }*/
+
+    if (ui_showIdx > 0) {
+      showGBuffer(pbo_dptr, ui_showIdx);
     } else {
       showImage(pbo_dptr, iteration);
-    }*/
+    }
 
     // unmap buffer object
     cudaGLUnmapBufferObject(pbo);
