@@ -173,9 +173,17 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
+    //std::cout << "main: " << ui_showIdx << std::endl;
     switch (ui_showIdx) {
-        case(0) : showImage(pbo_dptr, iteration);
-        case(1) : showGBuffer(pbo_dptr);
+        case(0) : 
+            showImage(pbo_dptr, iteration);
+            break;
+        case(1) : 
+            showGBuffer(pbo_dptr);
+            break;
+        default:
+            std::cout << "unsupported show idx " << ui_showIdx << std::endl;
+            break;
     }
     /*if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);

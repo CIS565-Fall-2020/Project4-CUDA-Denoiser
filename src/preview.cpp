@@ -223,7 +223,8 @@ void drawGui(int windowWidth, int windowHeight) {
 
     //ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
     ImGui::Combo("Show What", &ui_showIdx, ui_showItem, ui_ItemNum);
-
+   // std::cout << "preview: " << ui_showIdx << std::endl;
+    
     ImGui::Separator();
 
     if (ImGui::Button("Save image and exit")) {
