@@ -36,7 +36,12 @@ void initTextures() {
     glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 }
 
-void save_img_from_frame() {
+void save_img_from_frame(
+    const char* show_item,
+    const RenderState* renderState,
+    const std::string& startTimeString,
+    const int& samples
+) {
     GLubyte* buffer = new GLubyte[width * height * 4];
     glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);
 
@@ -53,9 +58,9 @@ void save_img_from_frame() {
         }
     }
 
-    std::string filename = std::string("test");
+    std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename;
+    ss << filename << "." << show_item << "." << startTimeString << "." << samples << "samp";
     filename = ss.str();
 
     // CHECKITOUT

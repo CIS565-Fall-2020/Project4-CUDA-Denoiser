@@ -222,8 +222,8 @@ void runCuda() {
     cudaGLUnmapBufferObject(pbo);
 
     if (ui_saveAndExit) {
-        //saveImage();
-        saveImagePbo(pbo_dptr);
+        saveImage();
+        //saveImagePbo(pbo_dptr); not work
         pathtraceFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
@@ -235,12 +235,16 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
       switch (key) {
       case GLFW_KEY_ESCAPE:
         saveImage();
-        
         glfwSetWindowShouldClose(window, GL_TRUE);
         break;
       case GLFW_KEY_S:
-        saveImage();
-        save_img_from_frame();
+        //saveImage();
+        save_img_from_frame(
+            ui_showItem[ui_showIdx],
+            renderState,
+            startTimeString,
+            iteration
+        );
         break;
       case GLFW_KEY_SPACE:
         camchanged = true;
