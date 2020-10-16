@@ -328,6 +328,9 @@ __global__ void shade(
 			depth == 0 || lightMis == -1 || geoms[path.lastGeom].type != GeomType::TRIANGLE
 		);
 		path.prevBounceNoMis = isSpecular;
+
+		/*path.colorAccum = (intersection.shadingNormal + 1.0f) * 0.5f;
+		path.remainingBounces = 0;*/
 	} else {
 		path.colorThroughput = glm::vec3(0.0f);
 		path.remainingBounces = 0;

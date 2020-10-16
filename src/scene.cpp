@@ -145,10 +145,9 @@ void Scene::computeCameraParameters(Camera &cam) {
     float yscaled = tan(cam.fovy * (PI / 180)); // should divide by 360 here, but I'm leaving it this way for consistency
     float xscaled = (yscaled * cam.resolution.x) / cam.resolution.y;
 
+    cam.view = glm::normalize(cam.lookAt - cam.position);
     cam.right = glm::normalize(glm::cross(cam.view, cam.up));
     cam.pixelLength = 2.0f * glm::vec2(xscaled, yscaled);
-
-    cam.view = glm::normalize(cam.lookAt - cam.position);
 }
 
 int Scene::loadCamera() {
@@ -304,6 +303,8 @@ void Scene::loadMaterial(std::string materialid) {
             { "CLEARCOAT", makeReader(&newMaterial.disney.clearcoat) },
             { "CLEARCOAT_GLOSS", makeReader(&newMaterial.disney.clearcoatGloss) }
         });
+    } else {
+        std::cout << "  Unrecognized material type: " << type << "\n";
     }
     while (readMaterialAttr(fp_in, attributes)) {
     }

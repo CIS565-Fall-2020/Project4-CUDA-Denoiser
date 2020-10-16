@@ -2,6 +2,9 @@
 
 #include "intersections.h"
 
+constexpr bool useSchlickFresnelApproximation = true;
+
+
 __host__ __device__ glm::vec3 crossDirection(glm::vec3 v) {
 	// Find a direction that is not the normal based off of whether or not the
 	// normal's components are all equal to sqrt(1/3) or whether or not at
@@ -175,6 +178,15 @@ __host__ __device__ glm::vec3 sampleDisneySpecularHalf(const Material &m, glm::v
 }
 
 
+__host__ __device__ float schlickFresnelFull(float eta, float cosOut) {
+	float r = (1.0f - eta) / (1.0f + eta);
+	r = r * r;
+
+	float a = 1.0f - cosOut;
+	float a2 = a * a;
+	return r + (1.0f - r) * a2 * a2 * a;
+}
+
 __host__ __device__ bool sampleBsdf(
 	glm::vec3 lightOut, glm::vec3 shadeNormal, Material m, bool backface,
 	glm::vec2 rand, glm::vec3 *lightInRes, glm::vec3 *bsdf, float *pdf
@@ -195,22 +207,27 @@ __host__ __device__ bool sampleBsdf(
 			float cosOut = glm::dot(shadeNormal, lightOut);
 
 			float fresnel = 1.0f;
-			float sinOut = glm::sqrt(1.0f - cosOut * cosOut);
-			float sinIn = sinOut * ior;
-			if (sinIn <= 1.0f) {
-				float cosIn = glm::sqrt(1.0f - sinIn * sinIn);
-				float rParl = (cosOut - ior * cosIn) / (cosOut + ior * cosIn);
-				float rPerp = (ior * cosOut - cosIn) / (ior * cosOut + cosIn);
-				fresnel = 0.5f * (rPerp * rPerp + rParl * rParl);
+			float sinOut2 = 1.0f - cosOut * cosOut;
+			float sinIn2 = sinOut2 * ior * ior;
+			if (sinIn2 <= 1.0f) {
+				if (useSchlickFresnelApproximation) {
+					fresnel = schlickFresnelFull(ior, glm::abs(cosOut));
+				} else {
+					float cosIn = glm::sqrt(1.0f - sinIn2);
+					float rParl = (cosOut - ior * cosIn) / (cosOut + ior * cosIn);
+					float rPerp = (ior * cosOut - cosIn) / (ior * cosOut + cosIn);
+					fresnel = 0.5f * (rPerp * rPerp + rParl * rParl);
+				}
 			}
 
 			if (rand.x < fresnel) { // reflect
 				lightIn = glm::reflect(-lightOut, shadeNormal);
+				*pdf = fresnel;
 			} else { // refract
 				lightIn = glm::refract(-lightOut, shadeNormal, ior);
+				*pdf = 1.0f - fresnel;
 			}
-			*bsdf = m.baseColorLinear * fresnel / glm::abs(glm::dot(shadeNormal, lightIn));
-			*pdf = fresnel;
+			*bsdf = m.baseColorLinear * (*pdf) / glm::abs(glm::dot(shadeNormal, lightIn));
 		}
 		break;
 
