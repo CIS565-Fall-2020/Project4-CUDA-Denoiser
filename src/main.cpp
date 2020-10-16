@@ -2,7 +2,23 @@
 #include "preview.h"
 #include <cstring>
 
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_glfw.h"
+#include "../imgui/imgui_impl_opengl3.h"
+
 static std::string startTimeString;
+
+// UI element
+int ui_iterations = 0;
+bool ui_showGbuffer = false;
+bool ui_denoise = false;
+int ui_filterSize = 80;
+float ui_colorWeight = 0.45f;
+float ui_normalWeight = 0.35f;
+float ui_positionWeight = 0.2f;
+bool ui_saveAndExit = false;
+int startupIterations = 0;
+int lastLoopIterations = 0;
 
 // For camera controls
 static bool leftMousePressed = false;
@@ -57,6 +73,9 @@ int main(int argc, char** argv) {
 
     cameraPosition = cam.position;
 
+    ui_iterations = renderState->iterations;
+    startupIterations = ui_iterations;
+
     // compute phi (horizontal) and theta (vertical) relative 3D axis
     // so, (0 0 1) is forward, (0 1 0) is up
     glm::vec3 viewXZ = glm::vec3(view.x, 0.0f, view.z);
@@ -99,6 +118,11 @@ void saveImage() {
 }
 
 void runCuda() {
+    if (lastLoopIterations != ui_iterations) {
+        lastLoopIterations = ui_iterations;
+        camchanged = true;
+    }
+
     if (camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
@@ -127,10 +151,11 @@ void runCuda() {
         pathtraceInit(scene);
     }
 
-    if (iteration < renderState->iterations) {
-        uchar4 *pbo_dptr = NULL;
+    uchar4* pbo_dptr = NULL;
+    cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+
+    if (iteration < ui_iterations) {
         iteration++;
-        cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
         // Timing using CUDA Events
         cudaEvent_t start, stop;
@@ -148,10 +173,19 @@ void runCuda() {
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start, stop);
         std::cout << milliseconds << std::endl;
+    }
 
-        // unmap buffer object
-        cudaGLUnmapBufferObject(pbo);
-    } else {
+    if (ui_showGbuffer) {
+        showGBuffer(pbo_dptr);
+    }
+    else {
+        showImage(pbo_dptr, iteration);
+    }
+
+    // unmap buffer object
+    cudaGLUnmapBufferObject(pbo);
+
+    if (ui_saveAndExit) {
         saveImage();
         pathtraceFree();
         cudaDeviceReset();

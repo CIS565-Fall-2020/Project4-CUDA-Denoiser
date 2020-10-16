@@ -90,10 +90,11 @@ struct OctreeNodeDevice {
     int geomCount;
 };
 
-struct OctreeLookUp {
-    int pixelIndex;
-    int branches[8];
+// A simple struct for storing scene geometry information per - pixel.
+struct GBufferPixel {
+    float t;
 };
+
 
 // Boolean function for path termination
 struct path_terminated {
