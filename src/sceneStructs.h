@@ -93,6 +93,9 @@ struct OctreeNodeDevice {
 // A simple struct for storing scene geometry information per - pixel.
 struct GBufferPixel {
     float t;
+    glm::vec3 color;
+    glm::vec3 normal;
+    glm::vec3 position;
 };
 
 

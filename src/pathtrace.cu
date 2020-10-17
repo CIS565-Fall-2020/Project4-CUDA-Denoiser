@@ -21,7 +21,7 @@
 #define ERRORCHECK 1
 #define CACHE_FIRST 0
 #define MATERIAL_SORT 0
-#define ANTIALIASING 10
+#define ANTIALIASING 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -80,13 +80,31 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        //TODO: test other gbuffer members
-        float timeToIntersect = gBuffer[index].t * 256.0;
 
+#define SHOW_MODE 2
+
+#if SHOW_MODE == 1
+        float timeToIntersect = gBuffer[index].t * 255.0;
         pbo[index].w = 0;
         pbo[index].x = timeToIntersect;
         pbo[index].y = timeToIntersect;
         pbo[index].z = timeToIntersect;
+#elif SHOW_MODE == 2
+        pbo[index].w = 0;
+        pbo[index].x = glm::abs(gBuffer[index].normal.x * 255.0);
+        pbo[index].y = glm::abs(gBuffer[index].normal.y * 255.0);
+        pbo[index].z = glm::abs(gBuffer[index].normal.z * 255.0);
+#elif SHOW_MODE == 3
+        pbo[index].w = 0;
+        pbo[index].y = glm::clamp(gBuffer[index].position.y * 25.f, 0.f, 255.0f);
+        pbo[index].z = glm::clamp(gBuffer[index].position.z * 25.f, 0.f, 255.0f);
+        pbo[index].x = glm::clamp(gBuffer[index].position.x * 25.f, 0.f, 255.0f);
+#elif SHOW_MODE == 4
+        pbo[index].w = 0;
+        pbo[index].x = gBuffer[index].color.x * 255.0;
+        pbo[index].y = gBuffer[index].color.y * 255.0;
+        pbo[index].z = gBuffer[index].color.z * 255.0;
+#endif
     }
 }
 
@@ -570,6 +588,27 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	}
 }
 
+__global__ void captureGBuffer(
+    int nPaths
+    , PathSegment* pathSegments
+    , ShadeableIntersection* shadeableIntersections
+    , Material* materials
+    , GBufferPixel* gBuffer
+) {
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < nPaths) {
+        Ray ray = pathSegments[index].ray;
+        ShadeableIntersection intersection = shadeableIntersections[index];
+        Material material = materials[intersection.materialId];
+
+        gBuffer[index].color = material.color;
+        gBuffer[index].normal = intersection.surfaceNormal;
+        gBuffer[index].t = intersection.t;
+        gBuffer[index].position = ray.direction * intersection.t + ray.origin;
+        
+    }
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -626,7 +665,7 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
         checkCUDAError("generate camera ray");
         cudaMemcpy(dev_first_paths, dev_paths,
             pixelcount * sizeof(PathSegment), cudaMemcpyDeviceToDevice);
-}
+    }
     else {
         cudaMemcpy(dev_paths, dev_first_paths,
             pixelcount * sizeof(PathSegment), cudaMemcpyDeviceToDevice);
@@ -687,8 +726,14 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
         }
 
 	    cudaDeviceSynchronize();
-	    depth++;
+	    
+        // Capture G-Buffer from segment and intersection in the first iteration
+        if (depth == 0) {
+            captureGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths,
+                dev_paths, dev_intersections, dev_materials, dev_gBuffer);
+        }
 
+        depth++;
 
 	    // --- Shading Stage ---
 	    // Shade path segments based on intersections and generate new rays by
