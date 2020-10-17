@@ -106,6 +106,7 @@ static GBufferPixel* dev_gBuffer = NULL;
 // ...
 static glm::vec3 *dev_denoiser_A = NULL;
 static glm::vec3 *dev_denoiser_B = NULL;
+static float *dev_gaussian_kernel = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -135,6 +136,10 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_denoiser_B, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_denoiser_B, 0, pixelcount * sizeof(glm::vec3));
 
+	const int filterSize = hst_scene->state.filterSize;
+	cudaMalloc(&dev_gaussian_kernel, filterSize * filterSize * sizeof(float));
+	cudaMemset(dev_gaussian_kernel, 0, filterSize * filterSize * sizeof(float));
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -148,6 +153,7 @@ void pathtraceFree() {
     // TODO: clean up any extra device memory you created
 	cudaFree(dev_denoiser_A);
 	cudaFree(dev_denoiser_B);
+	cudaFree(dev_gaussian_kernel);
 
     checkCUDAError("pathtraceFree");
 }
@@ -301,6 +307,7 @@ __global__ void kernATrous(
 	int filter_size,
 	glm::vec3 *denoiserA, 
 	glm::vec3 *denoiserB,
+	float *gaussianFilter,
 	PathSegment *pathSegments,
 	GBufferPixel *gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -308,15 +315,34 @@ __global__ void kernATrous(
 
 	if (x < cam.resolution.x && y < cam.resolution.y) {
 		int idx = x + (y * cam.resolution.x);
-		int stepwidth = pow(2, iter - 1);
-		int s_x = x - filter_size / 2 * stepwidth;
-		int s_y = y - filter_size / 2 * stepwidth;
-		for (int i = -filter_size / 2; i <= filter_size / 2; i++) {
-			for (int j = -filter_size / 2; j <= filter_size / 2; j++) {
-				int d = max(abs(i), abs(j));
+		int stepwidth = (int) pow(2.f, (float)iter - 1.f);
 
+		float norm_factor = 0.0f;
+		int r = filter_size / 2;
+
+		glm::vec3 acc = glm::vec3(0.f);
+
+		for (int i = -r; i <= r; i++) {
+			for (int j = -r; j <= r; j++) {
+				int d = (i + r) + (j + r) * filter_size;
+				int rx = x + i * stepwidth;
+				int ry = y + j * stepwidth;
+				if (rx >= cam.resolution.x || ry >= cam.resolution.y) {
+					continue;
+				}
+				int r_idx = rx + ry * cam.resolution.x;
+				if (iter == 1) {
+					// read from raytraced, paths -> B
+					acc += gaussianFilter[d] * pathSegments[r_idx].color;
+				}
+				else {
+					// A -> B
+					acc += gaussianFilter[d] * denoiserA[r_idx];
+				}
 			}
 		}
+
+		denoiserB[idx] = acc;
 	}
 }
 
