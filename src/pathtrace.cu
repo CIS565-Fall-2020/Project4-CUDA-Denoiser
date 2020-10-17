@@ -528,7 +528,6 @@ int getIndex(const int& x, const int& y, const int& res_x) {
 }
 
 __global__ void SubStep_A_Trous(
-    int step,
     bool final_step,
     glm::ivec2 resolution,
     float* filter_w,
@@ -540,22 +539,25 @@ __global__ void SubStep_A_Trous(
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     int index = getIndex(x, y, resolution.x);
-    int step_size = 1 << step;
-    // Convolve
-    for (int i = -1; i < 2; i++) {
-        for (int j = -1; j < 2; j++) {
-            int cur_x = x + step_size * i;
-            int cur_y = y + step_size * j;
-            // boundary condition
-            cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
-            cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
+    for (int step = 0; step < 3; step++) {
+        int step_size = 1 << step;
+        // Convolve
+        for (int i = -1; i < 2; i++) {
+            for (int j = -1; j < 2; j++) {
+                int cur_x = x + step_size * i;
+                int cur_y = y + step_size * j;
+                // boundary condition
+                cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
+                cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
 
-            int cur_index = getIndex(cur_x, cur_y, resolution.x);
-            image_buf[index] += filter_w[step] * image[cur_index];
+                int cur_index = getIndex(cur_x, cur_y, resolution.x);
+                image_buf[index] += filter_w[step] * image[cur_index];
+            }
         }
     }
+    
     // Subtract and Reconstruct 
-    if (final_step) {
+    if (!final_step) {
         image_final[index] += image_buf[index] - image[index];
     }
     else {
@@ -575,12 +577,12 @@ void deNoise(const int& iteration) {
     int pixelcount = cam.resolution.x * cam.resolution.y;
     cudaMemcpy(dev_image_denoise_buf, dev_image,
         pixelcount * sizeof(glm::vec3), cudaMemcpyHostToHost);
+    cudaMemset(dev_image_sum, 0, pixelcount * sizeof(glm::vec3));
     // A-Trous here
     for (int i = 0; i < iteration; i ++) {
-        const int& step_size = 1 << i;
+        //const int& step_size = 1 << i;
         bool final_step = ( i == (iteration - 1) );
         SubStep_A_Trous << <blocksPerGrid2d, blockSize2d >>>(
-            step_size,
             final_step,
             cam.resolution,
             dev_filter_w,

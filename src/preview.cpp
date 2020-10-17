@@ -248,7 +248,7 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Checkbox("Denoise", &ui_denoise);
     // add iteration to control A-trous step
-    ImGui::SliderInt("A trous steps", &ui_denoiseIteration, 1, 5);
+    ImGui::SliderInt("A trous steps", &ui_denoiseIteration, 0, 5);
 
     ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);

@@ -23,7 +23,7 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
+bool ui_denoise = true;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
@@ -32,7 +32,7 @@ bool ui_saveAndExit = false;
 
 // Jack12 add
 int ui_showIdx = 0;
-int ui_denoiseIteration = 3;
+int ui_denoiseIteration = 1;
 
 const const char* ui_showItem[] = {
     "Image", 
