@@ -13,12 +13,13 @@ int ui_iterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_colorPhi = 4.1f;
+float ui_normalPhi = 0.2f;
+float ui_positionPhi = 0.2f;
 bool ui_saveAndExit = false;
 int startupIterations = 0;
 int lastLoopIterations = 0;
+bool lastUseDenoise = false;
 
 // For camera controls
 static bool leftMousePressed = false;
@@ -122,6 +123,10 @@ void runCuda() {
         lastLoopIterations = ui_iterations;
         camchanged = true;
     }
+    if (lastUseDenoise != ui_denoise) {
+        lastUseDenoise = ui_denoise;
+        camchanged = true;
+    }
 
     if (camchanged) {
         iteration = 0;
@@ -163,9 +168,12 @@ void runCuda() {
         cudaEventCreate(&stop);
         cudaEventRecord(start);
 
-        // execute the kernel
+        // execute path-tracing and denoising
         int frame = 0;
         pathtrace(pbo_dptr, frame, iteration);
+        if (ui_denoise) {
+            denoise();
+        }
 
         // Output execution time of one iteration of path tracing
         cudaEventRecord(stop);

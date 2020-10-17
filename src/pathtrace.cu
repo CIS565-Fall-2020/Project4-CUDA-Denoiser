@@ -99,11 +99,6 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
         pbo[index].y = glm::clamp(gBuffer[index].position.y * 25.f, 0.f, 255.0f);
         pbo[index].z = glm::clamp(gBuffer[index].position.z * 25.f, 0.f, 255.0f);
         pbo[index].x = glm::clamp(gBuffer[index].position.x * 25.f, 0.f, 255.0f);
-#elif SHOW_MODE == 4
-        pbo[index].w = 0;
-        pbo[index].x = gBuffer[index].color.x * 255.0;
-        pbo[index].y = gBuffer[index].color.y * 255.0;
-        pbo[index].z = gBuffer[index].color.z * 255.0;
 #endif
     }
 }
@@ -130,6 +125,7 @@ static OctreeNodeDevice* dev_octree = nullptr;
 
 // GBuffer
 static GBufferPixel* dev_gBuffer = nullptr;
+static glm::vec3* dev_denoisePingpong = nullptr;
 
 // TODO: static variables for device memory, any extra info you need, etc
 
@@ -191,6 +187,7 @@ void pathtraceInit(Scene *scene) {
 
     // GBuffer memory allocation
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
+    cudaMalloc(&dev_denoisePingpong, pixelcount * sizeof(glm::vec3));
 
     // TODO: initialize any extra device memeory you need
 
@@ -221,6 +218,7 @@ void pathtraceFree() {
 
     // Free G-Buffer
     cudaFree(dev_gBuffer);
+    cudaFree(dev_denoisePingpong);
 
     // TODO: clean up any extra device memory you created
 
@@ -592,21 +590,100 @@ __global__ void captureGBuffer(
     int nPaths
     , PathSegment* pathSegments
     , ShadeableIntersection* shadeableIntersections
-    , Material* materials
     , GBufferPixel* gBuffer
 ) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < nPaths) {
         Ray ray = pathSegments[index].ray;
         ShadeableIntersection intersection = shadeableIntersections[index];
-        Material material = materials[intersection.materialId];
 
-        gBuffer[index].color = material.color;
         gBuffer[index].normal = intersection.surfaceNormal;
         gBuffer[index].t = intersection.t;
         gBuffer[index].position = ray.direction * intersection.t + ray.origin;
-        
     }
+}
+
+// Apply A-Trous filter on the image
+__global__ void applyATrousFilter(
+    int nPaths
+    , int stepWidth
+    , float c_phi
+    , float n_phi
+    , float p_phi
+    , Camera cam
+    , GBufferPixel *gBuffer
+    , glm::vec3 *img
+    , glm::vec3 *pingpongDenoise
+) {
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    if (x < cam.resolution.x && y < cam.resolution.y) {
+        int index = y * cam.resolution.x + x;
+
+        float kernel[5] = { 1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f / 4.f, 1.f / 16.f };
+        
+        glm::vec3 sum(0.f);
+        float cum_w = 0.f;
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                int2 uv = make_int2(
+                    x + (i - 2) * stepWidth,
+                    y + (j - 2) * stepWidth);
+                if (0 <= uv.x && uv.x < cam.resolution.x &&
+                    0 <= uv.y && uv.y < cam.resolution.y) {
+                    int tmpIdx = uv.x + uv.y * cam.resolution.x;
+
+                    glm::vec3 t = img[index] - img[tmpIdx];
+                    float dist2 = glm::dot(t, t);
+                    float c_w = glm::min(glm::exp(-dist2 / c_phi), 1.f);
+
+                    t = gBuffer[index].normal - gBuffer[tmpIdx].normal;
+                    dist2 = glm::max(glm::dot(t, t) / (float)(stepWidth * stepWidth), 0.f);
+                    float n_w = glm::min(glm::exp(-dist2 / n_phi), 1.f);
+
+                    t = gBuffer[index].position - gBuffer[tmpIdx].position;
+                    dist2 = glm::dot(t, t);
+                    float p_w = glm::min(glm::exp(-dist2 / p_phi), 1.f);
+                    
+                    float weight = c_w * n_w * p_w;
+                    sum += img[tmpIdx] * weight * kernel[i] * kernel[j];
+                    cum_w += weight * kernel[i] * kernel[j];
+                }
+            }
+        }
+        pingpongDenoise[index] = sum / cum_w;
+    }
+}
+
+void denoise() {
+    const Camera& cam = hst_scene->state.camera;
+    const int pixelcount = cam.resolution.x * cam.resolution.y;
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d(
+        (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+        (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+    int stepWidth = 1;
+    int c_phi = ui_colorPhi;
+    float filterLimit = glm::log((ui_filterSize - 1) / 2.f) / glm::log(2.f);
+    for (int i = 1; i <= filterLimit; i++) {
+        applyATrousFilter << <blocksPerGrid2d, blockSize2d >> > (
+            pixelcount,
+            stepWidth,
+            c_phi,
+            ui_normalPhi,
+            ui_positionPhi,
+            cam,
+            dev_gBuffer,
+            dev_image,
+            dev_denoisePingpong
+            );
+        stepWidth = stepWidth << 1;
+        c_phi *= 0.5f;
+        std::swap(dev_denoisePingpong, dev_image);
+    }
+    std::swap(dev_denoisePingpong, dev_image);
 }
 
 /**
@@ -730,7 +807,7 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
         // Capture G-Buffer from segment and intersection in the first iteration
         if (depth == 0) {
             captureGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths,
-                dev_paths, dev_intersections, dev_materials, dev_gBuffer);
+                dev_paths, dev_intersections, dev_gBuffer);
         }
 
         depth++;

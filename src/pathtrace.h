@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include "main.h"
 #include "scene.h"
 
 void pathtraceInit(Scene *scene);
@@ -9,3 +10,4 @@ void pathtrace(uchar4 *pbo, int frame, int iteration);
 
 void showGBuffer(uchar4* pbo);
 void showImage(uchar4* pbo, int iter);
+void denoise();
