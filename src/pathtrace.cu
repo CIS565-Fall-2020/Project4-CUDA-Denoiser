@@ -104,7 +104,8 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
-static glm::vec3 *dev_denoiser = NULL;
+static glm::vec3 *dev_denoiser_A = NULL;
+static glm::vec3 *dev_denoiser_B = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -128,8 +129,11 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
-	cudaMalloc(&dev_denoiser, pixelcount * sizeof(glm::vec3));
-	cudaMemset(dev_denoiser, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoiser_A, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoiser_A, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_denoiser_B, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoiser_B, 0, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -142,6 +146,8 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
+	cudaFree(dev_denoiser_A);
+	cudaFree(dev_denoiser_B);
 
     checkCUDAError("pathtraceFree");
 }
@@ -289,13 +295,28 @@ __global__ void shadeSimpleMaterials (
   }
 }
 
-__global__ void shadeATrous(
-	int num_paths,
+__global__ void kernATrous(
+	Camera cam,
+	int iter,
+	int filter_size,
+	glm::vec3 *denoiserA, 
+	glm::vec3 *denoiserB,
 	PathSegment *pathSegments,
 	GBufferPixel *gBuffer) {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (idx < num_paths) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
+	if (x < cam.resolution.x && y < cam.resolution.y) {
+		int idx = x + (y * cam.resolution.x);
+		int stepwidth = pow(2, iter - 1);
+		int s_x = x - filter_size / 2 * stepwidth;
+		int s_y = y - filter_size / 2 * stepwidth;
+		for (int i = -filter_size / 2; i <= filter_size / 2; i++) {
+			for (int j = -filter_size / 2; j <= filter_size / 2; j++) {
+				int d = max(abs(i), abs(j));
+
+			}
+		}
 	}
 }
 
