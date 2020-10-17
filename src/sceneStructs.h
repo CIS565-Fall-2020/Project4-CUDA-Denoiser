@@ -60,6 +60,7 @@ struct RenderState {
 
 	// denoiser parameters
 	int filterSize;
+	int filterIterations;
 };
 
 struct PathSegment {

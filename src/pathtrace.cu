@@ -13,6 +13,7 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "main.h"
 
 #define ERRORCHECK 1
 
@@ -93,6 +94,27 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 		pbo[index].z = position.z;
 		*/
     }
+}
+
+__global__ void denoiserToPBO(uchar4* pbo, glm::ivec2 resolution, glm::vec3 *denoiser) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 pix = denoiser[index];
+
+		glm::ivec3 color;
+		color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
+		color.y = glm::clamp((int)(pix.y * 255.0), 0, 255);
+		color.z = glm::clamp((int)(pix.z * 255.0), 0, 255);
+
+		// Each thread writes one pixel location in the texture (textel)
+		pbo[index].w = 0;
+		pbo[index].x = color.x;
+		pbo[index].y = color.y;
+		pbo[index].z = color.z;
+	}
 }
 
 static Scene * hst_scene = NULL;
@@ -475,6 +497,14 @@ void pathtrace(int frame, int iter) {
   dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
+	// Denoising
+	if (ui_denoise) {
+		for (int i = 1; i <= hst_scene->state.filterIterations; i++) {
+			kernATrous <<<blocksPerGrid2d, blockSize2d >>> (cam, i, ui_filterSize, dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
+			dev_denoiser_A = dev_denoiser_B;
+		}
+	}
+	
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
@@ -484,6 +514,15 @@ void pathtrace(int frame, int iter) {
             pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
     checkCUDAError("pathtrace");
+}
+
+void showDenoiser(uchar4 *pbo) {
+	const Camera &cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+	denoiserToPBO<<<blocksPerGrid2d, blockSize2d >>>(pbo, cam.resolution, dev_denoiser_B);
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
