@@ -132,6 +132,10 @@ const float w_0 = 3.0f / 8.0f;
 const float w_1 = 1.0f / 2.0f / 8.0f;
 const float w_2 = 1.0f / 8.0f / 16.0f;
 
+static float normal_var = 1.0f;
+static float position_var = 1.0f;
+static float origin_color_var = 1.0f;
+
 #if matrix_free
 static float host_filter_w[] = { w_0, w_1, w_2};
 #else
@@ -496,6 +500,7 @@ void pathtrace(int frame, int iter) {
       generateGBufferSub << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths, dev_intersections, dev_paths, dev_gBuffer);
   }
 
+  getVariance(dev_gBuffer);
   depth++;
   
 
@@ -555,6 +560,7 @@ __global__ void SubStep_A_Trous(
     bool final_step,
     glm::ivec2 resolution,
     float* filter_w,
+    GBufferPixel* gBuffer,
     glm::vec3* image,
     glm::vec3* image_buf,
     glm::vec3* image_final
@@ -569,9 +575,14 @@ __global__ void SubStep_A_Trous(
         //image_buf[index] = glm::vec3(0.0f);
         for (int half_filter_size = 0; half_filter_size < 3; half_filter_size++) {
             // for each round, 3 round in total
-            float cur_w = filter_w[half_filter_size];
+            float cur_filter_w = filter_w[half_filter_size];
             // Convolve
-
+#if edge_avoid
+            float normalization_factor_k = 0;
+            glm::vec3 p_normal = gBuffer[index].normal;
+            glm::vec3 p_position = gBuffer[index].world_p;
+            glm::vec3 p_color = gBuffer[index].originColor;
+#endif
             for (int i = -half_filter_size; i <= half_filter_size; i++) {
                 for (int j = -half_filter_size; j <= half_filter_size; j++) {
                     if (abs(i) >= half_filter_size || abs(j) >= half_filter_size) {
@@ -582,10 +593,29 @@ __global__ void SubStep_A_Trous(
                         cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
 
                         int cur_index = getIndex(cur_x, cur_y, resolution.x);
-                        image_buf[index] += cur_w * image[cur_index];
+
+                        image_buf[index] += cur_filter_w * image[cur_index];
+#if edge_avoid
+                        glm::vec3 q_normal = gBuffer[cur_index].normal;
+                        glm::vec3 q_position = gBuffer[cur_index].world_p;
+                        glm::vec3 q_color = gBuffer[cur_index].originColor;
+
+                        float w_n = expf(-glm::length(q_normal - p_normal) / normal_var);
+                        float w_p = expf(-glm::length(q_position - p_position) / position_var);
+                        float w_c = expf(-glm::length(q_color - p_color) / origin_color_var);
+                        float w_pq = w_n * w_p * w_c;
+
+                        normalization_factor_k += w_pq;
+                        image_buf[index] *= w_pq;
+#endif
+                        
                     }
                 }
             }
+#if edge_avoid
+            image_buf[index] /= normalization_factor_k;
+#endif
+
         }
        
 #else
@@ -629,6 +659,7 @@ void deNoise(const int& iteration) {
             final_step,
             cam.resolution,
             dev_filter_w,
+            dev_gBuffer,
             dev_denoised_image,
             dev_image_buf,
             dev_image_sum);
@@ -638,4 +669,34 @@ void deNoise(const int& iteration) {
             //std::swap(dev_denoised_image, dev_image_sum);
         } 
     }
+}
+
+void getVariance(const GBufferPixel* dev_gBuffer) {
+    const Camera& cam = hst_scene->state.camera;
+    int pixelcount = cam.resolution.x * cam.resolution.y;
+
+    GBufferPixel* host_gBuffer = new GBufferPixel[pixelcount];
+    cudaMemcpy(host_gBuffer, dev_gBuffer, pixelcount * sizeof(GBufferPixel), cudaMemcpyDeviceToHost);
+
+    glm::vec3 normal_mean, position_mean, color_mean;
+    for (int i = 0; i < pixelcount; i++) {
+        normal_mean += host_gBuffer->normal;
+        position_mean += host_gBuffer->world_p;
+        color_mean += host_gBuffer->originColor;
+    }
+    normal_mean /= (float)pixelcount;
+    position_mean /= (float)pixelcount;
+    color_mean /= (float)pixelcount;
+
+    for (int i = 0; i < pixelcount; i++) {
+        normal_var += glm::length(normal_mean - host_gBuffer->normal);
+        position_var += glm::length(position_mean - host_gBuffer->world_p);
+        origin_color_var += glm::length(color_mean - host_gBuffer->originColor);
+    }
+
+    normal_var /= pixelcount - 1;
+    position_var /= pixelcount - 1;
+    origin_color_var /= pixelcount - 1;
+
+    delete(host_gBuffer);
 }
