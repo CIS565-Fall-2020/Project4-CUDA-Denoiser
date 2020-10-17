@@ -327,6 +327,9 @@ __global__ void kernATrous(
 	Camera cam,
 	int iter,
 	int filter_size,
+	float colorWeight,
+	float normalWeight,
+	float positionWeight,
 	glm::vec3 *denoiserA, 
 	glm::vec3 *denoiserB,
 	float *gaussianFilter,
@@ -342,6 +345,11 @@ __global__ void kernATrous(
 		int r = filter_size / 2;
 		glm::vec3 acc = glm::vec3(0.f);
 		float norm_factor = 0.0f;
+		glm::vec3 normal = gBuffer[idx].nor;
+		glm::vec3 position = gBuffer[idx].pos;
+		float var_rt = colorWeight * colorWeight;
+		float var_n = normalWeight * normalWeight;
+		float var_p = positionWeight * positionWeight;
 
 		for (int i = -r; i <= r; i++) {
 			for (int j = -r; j <= r; j++) {
@@ -352,15 +360,19 @@ __global__ void kernATrous(
 					continue;
 				}
 				float gaussian = exp(-(i * i + j * j) / 2.f);
-				norm_factor += gaussian;
 				int r_idx = rx + ry * cam.resolution.x;
+				float w_rt = exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_n);
+				float w_n = exp(-glm::length(normal - gBuffer[r_idx].nor) / var_n);
+				float w_p = exp(-glm::length(position - gBuffer[r_idx].pos) / var_p);
+				float w = gaussian * w_rt * w_n * w_p;
+				norm_factor += w;
 				if (iter == 1) {
 					// read from raytraced, paths -> B
-					acc += gaussian * pathSegments[r_idx].color;
+					acc += w * pathSegments[r_idx].color;
 				}
 				else {
 					// A -> B
-					acc += gaussian * denoiserA[r_idx];
+					acc += w * denoiserA[r_idx];
 				}
 			}
 		}
@@ -500,8 +512,12 @@ void pathtrace(int frame, int iter) {
 
 	// Denoising
 	const int filterSize = ui_filterSize;
+	const int colorWeight = ui_colorWeight;
+	const int normalWeight = ui_normalWeight;
+	const int positionWeight = ui_positionWeight;
 	for (int i = 1; i <= ui_filterIterations; i++) {
-		kernATrous <<<blocksPerGrid2d, blockSize2d >>> (cam, i, filterSize, dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
+		kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, colorWeight, normalWeight, positionWeight, 
+			dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
 		glm::vec3 *tmp = dev_denoiser_A;
 		dev_denoiser_A = dev_denoiser_B;
 		dev_denoiser_B = tmp;
