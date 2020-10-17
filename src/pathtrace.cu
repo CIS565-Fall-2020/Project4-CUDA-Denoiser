@@ -124,7 +124,7 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
-static glm::vec3* dev_image_denoise_buf = NULL;
+static glm::vec3* dev_denoised_image = NULL;
 static glm::vec3* dev_image_buf = NULL;
 static glm::vec3* dev_image_sum = NULL;
 
@@ -170,8 +170,8 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
-    cudaMalloc(&dev_image_denoise_buf, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_image_denoise_buf, 0, pixelcount * sizeof(glm::vec3));
+    cudaMalloc(&dev_denoised_image, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_denoised_image, 0, pixelcount * sizeof(glm::vec3));
 
     cudaMalloc(&dev_image_buf, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_image_buf, 0, pixelcount * sizeof(glm::vec3));
@@ -198,7 +198,7 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
-    cudaFree(dev_image_denoise_buf);
+    cudaFree(dev_denoised_image);
     cudaFree(dev_image_buf);
     cudaFree(dev_image_sum);
     cudaFree(dev_filter_w);
@@ -537,7 +537,7 @@ const Camera &cam = hst_scene->state.camera;
 
     // Send results to OpenGL buffer for rendering
     if (if_deNoise) {
-        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image_denoise_buf);
+        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised_image);
     }
     else {
         sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
@@ -566,8 +566,8 @@ __global__ void SubStep_A_Trous(
         int step_size = 1 << iteration;
         int index = getIndex(x, y, resolution.x);
 #if matrix_free
-        image_buf[index] = glm::vec3(0.0f);
-        for (int half_filter_size = 0; half_filter_size < 1; half_filter_size++) {
+        //image_buf[index] = glm::vec3(0.0f);
+        for (int half_filter_size = 0; half_filter_size < 3; half_filter_size++) {
             // for each round, 3 round in total
             float cur_w = filter_w[half_filter_size];
             // Convolve
@@ -617,7 +617,7 @@ void deNoise(const int& iteration) {
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     int pixelcount = cam.resolution.x * cam.resolution.y;
-    cudaMemcpy(dev_image_denoise_buf, dev_image,
+    cudaMemcpy(dev_denoised_image, dev_image,
         pixelcount * sizeof(glm::vec3), cudaMemcpyHostToHost);
     cudaMemset(dev_image_sum, 0, pixelcount * sizeof(glm::vec3));
     // A-Trous here
@@ -629,15 +629,13 @@ void deNoise(const int& iteration) {
             final_step,
             cam.resolution,
             dev_filter_w,
-            dev_image_denoise_buf,
+            dev_denoised_image,
             dev_image_buf,
             dev_image_sum);
+        std::swap(dev_denoised_image, dev_image_buf);
+        cudaMemset(dev_image_buf, 0, pixelcount * sizeof(glm::vec3));
         if (final_step) {
-            std::swap(dev_image_denoise_buf, dev_image_sum);
+            //std::swap(dev_denoised_image, dev_image_sum);
         } 
-        else {
-            std::swap(dev_image_denoise_buf, dev_image_buf);
-            //cudaMemset(dev_image_buf, 0, pixelcount * sizeof(glm::vec3));
-        }
     }
 }
