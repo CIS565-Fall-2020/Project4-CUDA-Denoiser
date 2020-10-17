@@ -528,6 +528,7 @@ int getIndex(const int& x, const int& y, const int& res_x) {
 }
 
 __global__ void SubStep_A_Trous(
+    int iteration,
     bool final_step,
     glm::ivec2 resolution,
     float* filter_w,
@@ -538,20 +539,27 @@ __global__ void SubStep_A_Trous(
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
+    int step_size = 1 << iteration;
     int index = getIndex(x, y, resolution.x);
-    for (int step = 0; step < 3; step++) {
-        int step_size = 1 << step;
+    int count = 0;
+    for (int half_filter_size = 0; half_filter_size < 3; half_filter_size++) {
+        // for each round, 3 round in total
+        float cur_w = filter_w[half_filter_size];
         // Convolve
-        for (int i = -1; i < 2; i++) {
-            for (int j = -1; j < 2; j++) {
-                int cur_x = x + step_size * i;
-                int cur_y = y + step_size * j;
-                // boundary condition
-                cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
-                cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
+        
+        for (int i = - half_filter_size; i <= half_filter_size; i++) {
+            for (int j = - half_filter_size; j <= half_filter_size; j++) {
+                if (abs(i) >= half_filter_size || abs(j) >= half_filter_size) {
+                    int cur_x = x + step_size * i;
+                    int cur_y = y + step_size * j;
+                    // boundary condition
+                    cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
+                    cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
 
-                int cur_index = getIndex(cur_x, cur_y, resolution.x);
-                image_buf[index] += filter_w[step] * image[cur_index];
+                    int cur_index = getIndex(cur_x, cur_y, resolution.x);
+                    image_buf[index] += cur_w * image[cur_index];
+                    count++;
+                }
             }
         }
     }
@@ -583,6 +591,7 @@ void deNoise(const int& iteration) {
         //const int& step_size = 1 << i;
         bool final_step = ( i == (iteration - 1) );
         SubStep_A_Trous << <blocksPerGrid2d, blockSize2d >>>(
+            i,
             final_step,
             cam.resolution,
             dev_filter_w,
