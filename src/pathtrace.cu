@@ -74,11 +74,24 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
         float timeToIntersect = gBuffer[index].t * 256.0;
+		glm::vec3 position = gBuffer[index].pos + 10.f;
+		glm::vec3 normal = gBuffer[index].nor * 128.f + 128.f;
 
         pbo[index].w = 0;
+		/*
         pbo[index].x = timeToIntersect;
         pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+		pbo[index].z = timeToIntersect;
+		*/
+		
+		pbo[index].x = normal.x;
+		pbo[index].y = normal.y;
+		pbo[index].z = normal.z;
+		/*
+		pbo[index].x = position.x;
+		pbo[index].y = position.y;
+		pbo[index].z = position.z;
+		*/
     }
 }
 
@@ -273,6 +286,16 @@ __global__ void shadeSimpleMaterials (
   }
 }
 
+__global__ void shadeATrous(
+	int num_paths,
+	PathSegment *pathSegments,
+	GBufferPixel *gBuffer) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < num_paths) {
+
+	}
+}
+
 __global__ void generateGBuffer (
   int num_paths,
   ShadeableIntersection* shadeableIntersections,
@@ -281,7 +304,11 @@ __global__ void generateGBuffer (
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+	  ShadeableIntersection intersection = shadeableIntersections[idx];
+	  PathSegment segment = pathSegments[idx];
+	  gBuffer[idx].t = intersection.t;
+	  gBuffer[idx].pos = intersection.t * segment.ray.direction + segment.ray.origin;
+	  gBuffer[idx].nor = intersection.surfaceNormal;
   }
 }
 
