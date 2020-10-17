@@ -158,7 +158,7 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_denoiser_B, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_denoiser_B, 0, pixelcount * sizeof(glm::vec3));
 
-	const int filterSize = hst_scene->state.filterSize;
+	const int filterSize = ui_filterSize;
 	cudaMalloc(&dev_gaussian_kernel, filterSize * filterSize * sizeof(float));
 	cudaMemset(dev_gaussian_kernel, 0, filterSize * filterSize * sizeof(float));
 
@@ -339,32 +339,33 @@ __global__ void kernATrous(
 		int idx = x + (y * cam.resolution.x);
 		int stepwidth = (int) pow(2.f, (float)iter - 1.f);
 
-		float norm_factor = 0.0f;
 		int r = filter_size / 2;
-
 		glm::vec3 acc = glm::vec3(0.f);
+		float norm_factor = 0.0f;
 
 		for (int i = -r; i <= r; i++) {
 			for (int j = -r; j <= r; j++) {
-				int d = (i + r) + (j + r) * filter_size;
+				//int d = (i + r) + (j + r) * filter_size;
 				int rx = x + i * stepwidth;
 				int ry = y + j * stepwidth;
-				if (rx >= cam.resolution.x || ry >= cam.resolution.y) {
+				if (rx < 0 || rx >= cam.resolution.x || ry < 0 || ry >= cam.resolution.y) {
 					continue;
 				}
+				float gaussian = exp(-(i * i + j * j) / 2.f);
+				norm_factor += gaussian;
 				int r_idx = rx + ry * cam.resolution.x;
 				if (iter == 1) {
 					// read from raytraced, paths -> B
-					acc += gaussianFilter[d] * pathSegments[r_idx].color;
+					acc += gaussian * pathSegments[r_idx].color;
 				}
 				else {
 					// A -> B
-					acc += gaussianFilter[d] * denoiserA[r_idx];
+					acc += gaussian * denoiserA[r_idx];
 				}
 			}
 		}
 
-		denoiserB[idx] = acc;
+		denoiserB[idx] = acc / norm_factor;
 	}
 }
 
@@ -498,11 +499,12 @@ void pathtrace(int frame, int iter) {
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
 	// Denoising
-	if (ui_denoise) {
-		for (int i = 1; i <= hst_scene->state.filterIterations; i++) {
-			kernATrous <<<blocksPerGrid2d, blockSize2d >>> (cam, i, ui_filterSize, dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
-			dev_denoiser_A = dev_denoiser_B;
-		}
+	const int filterSize = ui_filterSize;
+	for (int i = 1; i <= ui_filterIterations; i++) {
+		kernATrous <<<blocksPerGrid2d, blockSize2d >>> (cam, i, filterSize, dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
+		glm::vec3 *tmp = dev_denoiser_A;
+		dev_denoiser_A = dev_denoiser_B;
+		dev_denoiser_B = tmp;
 	}
 	
     ///////////////////////////////////////////////////////////////////////////
