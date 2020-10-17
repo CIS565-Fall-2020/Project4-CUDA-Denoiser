@@ -223,7 +223,11 @@ void runCuda() {
       showGBuffer(pbo_dptr, ui_showIdx);
     } else {
         if (ui_denoise) {
-            deNoise(ui_denoiseIteration);
+            deNoise(
+                ui_denoiseIteration,
+                ui_normalWeight,
+                ui_positionWeight,
+                ui_colorWeight);
         }
       showImage(pbo_dptr, iteration, ui_denoise);
     }

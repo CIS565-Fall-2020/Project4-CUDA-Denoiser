@@ -576,12 +576,14 @@ __global__ void SubStep_A_Trous(
         int index = getIndex(x, y, resolution.x);
 #if matrix_free
         //image_buf[index] = glm::vec3(0.0f);
+        float normalization_factor_k = 0;
         for (int half_filter_size = 0; half_filter_size < 3; half_filter_size++) {
             // for each round, 3 round in total
             float cur_filter_w = filter_w[half_filter_size];
             // Convolve
+            
 #if edge_avoid
-            float normalization_factor_k = 0;
+            
             glm::vec3 p_normal = gBuffer[index].normal;
             glm::vec3 p_position = gBuffer[index].world_p;
             glm::vec3 p_color = gBuffer[index].originColor;
@@ -617,11 +619,13 @@ __global__ void SubStep_A_Trous(
                     }
                 }
             }
-#if edge_avoid
-            image_buf[index] /= normalization_factor_k;
-#endif
+
 
         }
+#if edge_avoid
+        image_buf[index] /= normalization_factor_k;
+#endif
+        
        
 #else
         int x_offset = -2, y_offset = -2;
@@ -644,7 +648,11 @@ __global__ void SubStep_A_Trous(
 
 }
 
-void deNoise(const int& iteration) {
+void deNoise(
+    const int& iteration,
+    const float& ui_normalWeight,
+    const float& ui_positionWeight,
+    const float& ui_colorWeight) {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -666,9 +674,9 @@ void deNoise(const int& iteration) {
             dev_filter_w,
 
             dev_gBuffer,
-            normal_var,
-            position_var,
-            origin_color_var,
+            normal_var/ui_normalWeight,
+            position_var/ ui_positionWeight,
+            origin_color_var/ ui_colorWeight,
 
             dev_denoised_image,
             dev_image_buf,
