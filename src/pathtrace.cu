@@ -561,6 +561,9 @@ __global__ void SubStep_A_Trous(
     glm::ivec2 resolution,
     float* filter_w,
     GBufferPixel* gBuffer,
+    float normal_var,
+    float position_var,
+    float color_var,
     glm::vec3* image,
     glm::vec3* image_buf,
     glm::vec3* image_final
@@ -594,7 +597,7 @@ __global__ void SubStep_A_Trous(
 
                         int cur_index = getIndex(cur_x, cur_y, resolution.x);
 
-                        image_buf[index] += cur_filter_w * image[cur_index];
+                        
 #if edge_avoid
                         glm::vec3 q_normal = gBuffer[cur_index].normal;
                         glm::vec3 q_position = gBuffer[cur_index].world_p;
@@ -602,11 +605,13 @@ __global__ void SubStep_A_Trous(
 
                         float w_n = expf(-glm::length(q_normal - p_normal) / normal_var);
                         float w_p = expf(-glm::length(q_position - p_position) / position_var);
-                        float w_c = expf(-glm::length(q_color - p_color) / origin_color_var);
+                        float w_c = expf(-glm::length(q_color - p_color) / color_var);
                         float w_pq = w_n * w_p * w_c;
 
-                        normalization_factor_k += w_pq;
-                        image_buf[index] *= w_pq;
+                        normalization_factor_k += w_pq * cur_filter_w;
+                        image_buf[index] += w_pq * cur_filter_w * image[cur_index];
+#else
+                        image_buf[index] += cur_filter_w * image[cur_index];
 #endif
                         
                     }
@@ -659,7 +664,12 @@ void deNoise(const int& iteration) {
             final_step,
             cam.resolution,
             dev_filter_w,
+
             dev_gBuffer,
+            normal_var,
+            position_var,
+            origin_color_var,
+
             dev_denoised_image,
             dev_image_buf,
             dev_image_sum);
@@ -680,18 +690,18 @@ void getVariance(const GBufferPixel* dev_gBuffer) {
 
     glm::vec3 normal_mean, position_mean, color_mean;
     for (int i = 0; i < pixelcount; i++) {
-        normal_mean += host_gBuffer->normal;
-        position_mean += host_gBuffer->world_p;
-        color_mean += host_gBuffer->originColor;
+        normal_mean += host_gBuffer[i].normal;
+        position_mean += host_gBuffer[i].world_p;
+        color_mean += host_gBuffer[i].originColor;
     }
     normal_mean /= (float)pixelcount;
     position_mean /= (float)pixelcount;
     color_mean /= (float)pixelcount;
 
     for (int i = 0; i < pixelcount; i++) {
-        normal_var += glm::length(normal_mean - host_gBuffer->normal);
-        position_var += glm::length(position_mean - host_gBuffer->world_p);
-        origin_color_var += glm::length(color_mean - host_gBuffer->originColor);
+        normal_var += glm::length(normal_mean - host_gBuffer[i].normal);
+        position_var += glm::length(position_mean - host_gBuffer[i].world_p);
+        origin_color_var += glm::length(color_mean - host_gBuffer[i].originColor);
     }
 
     normal_var /= pixelcount - 1;
