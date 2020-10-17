@@ -15,6 +15,7 @@
 #include "interactions.h"
 
 #include <device_launch_parameters.h>
+#include "cfg.h"
 
 #define ERRORCHECK 1
 
@@ -127,8 +128,25 @@ static glm::vec3* dev_image_denoise_buf = NULL;
 static glm::vec3* dev_image_buf = NULL;
 static glm::vec3* dev_image_sum = NULL;
 
-float host_filter_w[] = { 3.0f / 8.0f, 1.0f / 2.0f / 8.0f, 1.0 / 8.0f / 16.0f};
+const float w_0 = 3.0f / 8.0f;
+const float w_1 = 1.0f / 2.0f / 8.0f;
+const float w_2 = 1.0f / 8.0f / 16.0f;
+
+#if matrix_free
+static float host_filter_w[] = { w_0, w_1, w_2};
+#else
+static float host_filter_w[] = 
+{ 
+    w_2, w_2, w_2, w_2, w_2,
+    w_2, w_1, w_1, w_1, w_2,
+    w_2, w_1, w_0, w_1, w_2,
+    w_2, w_1, w_1, w_1, w_2.
+    w_2, w_2, w_2, w_2, w_2
+ };
+#endif
 static float* dev_filter_w = NULL;
+
+
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -160,9 +178,14 @@ void pathtraceInit(Scene *scene) {
 
     cudaMalloc(&dev_image_sum, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_image_sum, 0, pixelcount * sizeof(glm::vec3));
-
+    
+#if matrix_free
     cudaMalloc(&dev_filter_w, 3 * sizeof(float));
     cudaMemcpy(dev_filter_w, host_filter_w, 3 * sizeof(float), cudaMemcpyHostToDevice);
+#else
+    cudaMalloc(&dev_filter_w, 25 * sizeof(float));
+    cudaMemcpy(dev_filter_w, host_filter_w, 25 * sizeof(float), cudaMemcpyHostToDevice);
+#endif
     
     checkCUDAError("pathtraceInit");
 }
@@ -539,39 +562,50 @@ __global__ void SubStep_A_Trous(
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
-    int step_size = 1 << iteration;
-    int index = getIndex(x, y, resolution.x);
-    int count = 0;
-    for (int half_filter_size = 0; half_filter_size < 3; half_filter_size++) {
-        // for each round, 3 round in total
-        float cur_w = filter_w[half_filter_size];
-        // Convolve
-        
-        for (int i = - half_filter_size; i <= half_filter_size; i++) {
-            for (int j = - half_filter_size; j <= half_filter_size; j++) {
-                if (abs(i) >= half_filter_size || abs(j) >= half_filter_size) {
-                    int cur_x = x + step_size * i;
-                    int cur_y = y + step_size * j;
-                    // boundary condition
-                    cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
-                    cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
+    if (x < resolution.x && y < resolution.y) {
+        int step_size = 1 << iteration;
+        int index = getIndex(x, y, resolution.x);
+#if matrix_free
+        image_buf[index] = glm::vec3(0.0f);
+        for (int half_filter_size = 0; half_filter_size < 1; half_filter_size++) {
+            // for each round, 3 round in total
+            float cur_w = filter_w[half_filter_size];
+            // Convolve
 
-                    int cur_index = getIndex(cur_x, cur_y, resolution.x);
-                    image_buf[index] += cur_w * image[cur_index];
-                    count++;
+            for (int i = -half_filter_size; i <= half_filter_size; i++) {
+                for (int j = -half_filter_size; j <= half_filter_size; j++) {
+                    if (abs(i) >= half_filter_size || abs(j) >= half_filter_size) {
+                        int cur_x = x + step_size * i;
+                        int cur_y = y + step_size * j;
+                        // boundary condition
+                        cur_x = (cur_x < 0 || cur_x >= resolution.x) ? x - step_size * i : cur_x;
+                        cur_y = (cur_y < 0 || cur_y >= resolution.y) ? y - step_size * j : cur_y;
+
+                        int cur_index = getIndex(cur_x, cur_y, resolution.x);
+                        image_buf[index] += cur_w * image[cur_index];
+                    }
                 }
             }
         }
+       
+#else
+        int x_offset = -2, y_offset = -2;
+        for (int pix = 0; pix < 25; pix++) {
+
+        }
+#endif // matrix_free
+        __syncthreads();
+        
+        // Subtract and Reconstruct 
+        if (!final_step) {
+            image_final[index] += image_buf[index] - image[index];
+        }
+        else {
+            image_final[index] += image_buf[index];
+        }
+        // 
     }
     
-    // Subtract and Reconstruct 
-    if (!final_step) {
-        image_final[index] += image_buf[index] - image[index];
-    }
-    else {
-        image_final[index] += image_buf[index];
-    }
-    // 
 
 }
 
@@ -603,6 +637,7 @@ void deNoise(const int& iteration) {
         } 
         else {
             std::swap(dev_image_denoise_buf, dev_image_buf);
+            //cudaMemset(dev_image_buf, 0, pixelcount * sizeof(glm::vec3));
         }
     }
 }
