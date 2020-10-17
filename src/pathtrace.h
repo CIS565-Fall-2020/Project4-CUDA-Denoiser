@@ -7,4 +7,5 @@ void pathtraceInit(Scene *scene);
 void pathtraceFree();
 void pathtrace(int frame, int iteration);
 void showGBuffer(uchar4 *pbo, const int& show_idx);
-void showImage(uchar4 *pbo, int iter);
+void showImage(uchar4 *pbo, int iter, bool if_denoise);
+void deNoise(const int& iteration);

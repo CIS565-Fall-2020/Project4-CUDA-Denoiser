@@ -32,12 +32,16 @@ bool ui_saveAndExit = false;
 
 // Jack12 add
 int ui_showIdx = 0;
+int ui_denoiseIteration = 3;
+
 const const char* ui_showItem[] = {
     "Image", 
     "IntersectionTime",
-    "Normal"
+    "Normal",
+    "Position",
+    "OriginColor"
 };
-const int ui_ItemNum = 3;
+const int ui_ItemNum = 5;
 
 
 static bool camchanged = true;
@@ -218,7 +222,10 @@ void runCuda() {
     if (ui_showIdx > 0) {
       showGBuffer(pbo_dptr, ui_showIdx);
     } else {
-      showImage(pbo_dptr, iteration);
+        if (ui_denoise) {
+            deNoise(ui_denoiseIteration);
+        }
+      showImage(pbo_dptr, iteration, ui_denoise);
     }
 
     // unmap buffer object

@@ -80,4 +80,6 @@ struct ShadeableIntersection {
 struct GBufferPixel {
   float t;
   glm::vec3 normal;
+  glm::vec3 world_p;
+  glm::vec3 originColor;
 };

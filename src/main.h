@@ -46,6 +46,7 @@ extern bool ui_saveAndExit;
 extern int ui_showIdx;
 extern const char* ui_showItem[];
 extern const int ui_ItemNum;
+extern int ui_denoiseIteration;
 
 void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
