@@ -67,23 +67,60 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, glm::vec3* bufferImage) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
+
+		// this is white
+		pbo[index].x = 255;
+		pbo[index].y = 255;
+		pbo[index].z = 255;
+		// this is black
+		// these bottom lines cause a warning saying that the integer was
+		// truncated. this makes since because the extent for a uchar is 255
+		// so the compiler will truncate or dispose of all of the bits used to
+		// express values over 256
+		pbo[index].x = 256;
+		pbo[index].y = 256;
+		pbo[index].z = 256;
+
 		float timeToIntersect = gBuffer[index].t * 256.0;
 
 		pbo[index].w = 0;
 		pbo[index].x = timeToIntersect;
 		pbo[index].y = timeToIntersect;
 		pbo[index].z = timeToIntersect;
+
+		glm::vec3 c = gBuffer[index].c * 256.f;
+		pbo[index].x = c.x;
+		pbo[index].y = c.y;
+		pbo[index].z = c.z;
+
+		/*glm::vec3 n = (gBuffer[index].n + 1.f) / 2.f * 256.f;
+		pbo[index].x = n.x;
+		pbo[index].y = n.y;
+		pbo[index].z = n.z;*/
+
+		glm::vec3 p = gBuffer[index].p * 256.f;
+		pbo[index].x = p.x;
+		pbo[index].y = p.y;
+		pbo[index].z = p.z;
+
+		// i think that because pbo is unmapped after it is assigned values
+		// the pointer will be invalid and will not persist when i try to
+		// copy its contents later on in the code
+		bufferImage[index].x = pbo[index].x;
+		bufferImage[index].y = pbo[index].y;
+		bufferImage[index].z = pbo[index].z;
 	}
 }
 
 static Scene* hst_scene = NULL;
 static glm::vec3* dev_image = NULL;
+static glm::vec3* dev_bufferImage = NULL;
 static Geom* dev_geoms = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
@@ -114,6 +151,8 @@ void pathtraceInit(Scene* scene) {
 	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
 	// TODO: initialize any extra device memeory you need
+	cudaMalloc(&dev_bufferImage, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_bufferImage, 0, pixelcount * sizeof(glm::vec3));
 
 	checkCUDAError("pathtraceInit");
 }
@@ -126,6 +165,7 @@ void pathtraceFree() {
 	cudaFree(dev_intersections);
 	cudaFree(dev_gBuffer);
 	// TODO: clean up any extra device memory you created
+	cudaFree(dev_bufferImage);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -282,7 +322,12 @@ __global__ void generateGBuffer(
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < num_paths)
 	{
-		gBuffer[idx].t = shadeableIntersections[idx].t;
+		ShadeableIntersection si = shadeableIntersections[idx];
+		PathSegment ps = pathSegments[idx];
+		gBuffer[idx].t = si.t;
+		gBuffer[idx].c = ps.color;
+		gBuffer[idx].n = si.surfaceNormal;
+		gBuffer[idx].p = ps.ray.direction * si.t;
 	}
 }
 
@@ -357,7 +402,7 @@ void pathtrace(int frame, int iter) {
 	// --- PathSegment Tracing Stage ---
 	// Shoot ray into scene, bounce between objects, push shading chunks
 
-  // Empty gbuffer
+	// Empty gbuffer
 	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
 	// clean shading chunks
@@ -407,6 +452,9 @@ void pathtrace(int frame, int iter) {
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
+	//cudaMemcpy(hst_scene->state.bufferImage.data(), dev_bufferImage,
+	//	pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+
 	checkCUDAError("pathtrace");
 }
 
@@ -419,7 +467,7 @@ void showGBuffer(uchar4* pbo) {
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer, dev_bufferImage);
 }
 
 void showImage(uchar4* pbo, int iter) {
@@ -431,4 +479,5 @@ void showImage(uchar4* pbo, int iter) {
 
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+
 }
