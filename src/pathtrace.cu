@@ -104,6 +104,7 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static glm::vec3 *dev_denoiser = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -127,6 +128,8 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+	cudaMalloc(&dev_denoiser, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoiser, 0, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
