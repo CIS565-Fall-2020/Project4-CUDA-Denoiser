@@ -22,6 +22,10 @@ Add
 
 ### Intro
 
+Here shows the results with 20 samples.
+
+![](img/teaser.png)
+
 This repo contains  a CUDA-based path-tracer Denoiser based on [paper](https://jo.dreggn.org/home/2010_atrous.pdf)(2010) : 
 
 **Edge-Avoiding À-Trous Wavelet Transform for fast Global Illumination Filtering.**
@@ -30,7 +34,7 @@ Basically, Denoiser serves to produce a smoother results for path-traced image e
 
 Different from [Guided filtering](http://kaiminghe.com/eccv10/) (ECCV2010) which only takes semantic mask or itself as guidance(only one).  this paper takes `normal, color and position` as guidance to filter the image. 
 
-!img
+![](img/pipeline.svg)
 
 ### Performance Analysis
 
@@ -38,28 +42,39 @@ Different from [Guided filtering](http://kaiminghe.com/eccv10/) (ECCV2010) which
 
 From the image showed before, we could see that the 20 samples with denoising applied could achieve comparable results with 5000 samples.
 
-##### Runtime:
+
+
+##### Runtime:![Performance](img/Performance.svg)
+
+Here shows results in different parameters:
+
+![parameter](img/Tune_parameter.svg)
+
+For Cornell Box scene, I find the best match is with weight `color: 0.65`,`normal: 0.56`, `position: 0.4`
+
+
 
 Here shows the runtime for each scene
 
-| milliseconds | 5 steps Denoise | No denoise |
-| ------------ | --------------- | ---------- |
-| Cornell Box  |                 | 330.6      |
-| Fresnel      | 1050.5          | 954.842    |
+| milliseconds | 5 steps A-trous Denoise | No denoise |
+| ------------ | ----------------------- | ---------- |
+| Cornell Box  | 330.6                   | 299.667    |
+| Fresnel      | 1050.5                  | 954.842    |
+| Teaser       | 1109.1                  | 960.42     |
 
-Fresnel scenes:
+Since the algorithm is **O(N)** for **N** pixel, the 
 
-
-
-##### WIth different material types:
-
+From the results and the paper we could find out that if the scenes become more complicated, the materials turn more diverse, the donoised results would go worse because the algorithm is influenced by the variance from normal, color and positions. 
 
 
-##### Different scenes
+
+
 
 ### GUI modification
 
 Aiming at better debug view, we modify the UI to support switch the frame to visualize between rendered image, normal, position and color.
+
+![GUI](img/GUI.png)
 
 #### Save by frame texture
 
