@@ -389,6 +389,9 @@ __global__ void denoise(glm::ivec2 resolution,
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
 			glm::vec3 ctmp = GBPix2.c;
 
+			glm::vec3 t = cval - ctmp;
+
+			float c_w = __min(0.f, 1.f);
 		}
 
 		PathSegment iterationPath = iterationPaths[idx];
