@@ -375,9 +375,12 @@ __global__ void kernATrous(
 				//float gaussian = exp(-(i * i + j * j) * stepwidth * stepwidth / 2.f);
 				int r_idx = rx + ry * cam.resolution.x;
 
-				float w_rt = min(1.f, exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_rt));
-				float w_n = min(1.f, exp(-glm::length(normal - gBuffer[r_idx].nor) / var_n));
-				float w_p = min(1.f, exp(-glm::length(position - gBuffer[r_idx].pos) / var_x));
+				glm::vec3 t = pathSegments[idx].color - pathSegments[r_idx].color;
+				float w_rt = min(1.f, exp(-glm::dot(t, t) / var_rt));
+				t = normal - gBuffer[r_idx].nor;
+				float w_n = min(1.f, exp(-glm::dot(t, t) / var_n));
+				t = position - gBuffer[r_idx].pos;
+				float w_p = min(1.f, exp(-glm::dot(t, t) / var_x));
 
 				float w = gaussian * w_rt * w_n * w_p;
 				norm_factor += w;
@@ -438,6 +441,15 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	{
 		PathSegment iterationPath = iterationPaths[index];
 		image[iterationPath.pixelIndex] += iterationPath.color;
+	}
+}
+
+__global__ void finalGatherDenoise(int nPaths, glm::vec3 *image, glm::vec3 *iterationDenoise) {
+	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	if (index < nPaths)
+	{
+		image[index] += iterationDenoise[index];
 	}
 }
 
@@ -538,31 +550,35 @@ void pathtrace(int frame, int iter) {
   iterationComplete = depth == traceDepth;
 	}
 
-  // Assemble this iteration and apply it to the image
-  dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
+	if (ui_denoise) {
+		// Denoising
+		kernFillWeightArrays<<<numBlocksPixels, blockSize1d >>>(num_paths, dev_w_len, dev_w_len2, dev_paths, dev_gBuffer);
+		glm::vec3 sum = thrust::reduce(thrust::device, dev_w_len, dev_w_len + num_paths, glm::vec3(0.f), sum_vec());
+		glm::vec3 sum2 = thrust::reduce(thrust::device, dev_w_len2, dev_w_len2 + num_paths, glm::vec3(0.f), sum_vec());
+		float u_rt = sum.x / num_paths;
+		float u_n = sum.y / num_paths;
+		float u_x = sum.z / num_paths;
+		float var_rt = sum2.x / num_paths - u_rt * u_rt;
+		float var_n = sum2.y / num_paths - u_n * u_n;
+		float var_x = sum2.z / num_paths - u_x * u_x;
 
-	// Denoising
-	kernFillWeightArrays<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_w_len, dev_w_len2, dev_paths, dev_gBuffer);
-	glm::vec3 sum = thrust::reduce(thrust::device, dev_w_len, dev_w_len + num_paths, glm::vec3(0.f), sum_vec());
-	glm::vec3 sum2 = thrust::reduce(thrust::device, dev_w_len2, dev_w_len2 + num_paths, glm::vec3(0.f), sum_vec());
-	float u_rt = sum.x / num_paths;
-	float u_n = sum.y / num_paths;
-	float u_x = sum.z / num_paths;
-	float var_rt = sum2.x / num_paths - u_rt * u_rt;
-	float var_n = sum2.y / num_paths - u_n * u_n;
-	float var_x = sum2.z / num_paths - u_x * u_x;
-
-	const int filterSize = ui_filterSize;
-	int filterIterations = filterSize / 25;
-	for (int i = 1; i <= filterIterations; i++) {
-		kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, var_rt, var_n, var_x, 
-			dev_denoiser_A, dev_denoiser_B, dev_paths, dev_gBuffer);
-		glm::vec3 *tmp = dev_denoiser_A;
-		dev_denoiser_A = dev_denoiser_B;
-		dev_denoiser_B = tmp;
+		const int filterSize = ui_filterSize;
+		int filterIterations = filterSize / 25; // use 5x5 filter
+		for (int i = 1; i <= filterIterations; i++) {
+			kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, var_rt, var_n, var_x,
+				dev_denoiser_A, dev_denoiser_B, dev_paths, dev_gBuffer);
+			glm::vec3 *tmp = dev_denoiser_A;
+			dev_denoiser_A = dev_denoiser_B;
+			dev_denoiser_B = tmp;
+		}
+		// Assemble denoised iteration and apply it to the image
+		finalGatherDenoise<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_denoiser_A);
 	}
-	
+	else {
+		// Assemble this iteration and apply it to the image
+		finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+	}
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
