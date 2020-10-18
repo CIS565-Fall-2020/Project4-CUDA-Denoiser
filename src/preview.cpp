@@ -274,9 +274,10 @@ void drawGui(int windowWidth, int windowHeight) {
 }
 
 void mainLoop() {
+    PerformanceTimer m_timer;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-        runCuda();
+        runCuda(m_timer);
 
         string title = "CIS565 Path Tracer | " + utilityCore::convertIntToString(iteration) + " Iterations";
         glfwSetWindowTitle(window, title.c_str());

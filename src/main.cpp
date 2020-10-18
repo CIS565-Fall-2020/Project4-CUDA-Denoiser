@@ -160,8 +160,8 @@ void saveImagePbo(const uchar4* pbo) {
     img.savePNG(filename);
 }
 
-
-void runCuda() {
+bool out_flag = false;
+void runCuda(PerformanceTimer& m_timer) {
     if (lastLoopIterations != ui_iterations) {
       lastLoopIterations = ui_iterations;
       camchanged = true;
@@ -193,11 +193,14 @@ void runCuda() {
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+
+        m_timer.startSysTimer();
     }
 
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
+    
     if (iteration < ui_iterations) {
         iteration++;
 
@@ -205,19 +208,19 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
+    else {
+        // Jack12 add timer here
+         m_timer.endSysTimer();
 
-    //std::cout << "main: " << ui_showIdx << std::endl;
-    /*switch (ui_showIdx) {
-        case(0) : 
-            showImage(pbo_dptr, iteration);
-            break;
-        case(1) : 
-            showGBuffer(pbo_dptr);
-            break;
-        default:
-            std::cout << "unsupported show idx " << ui_showIdx << std::endl;
-            break;
-    }*/
+         double time_passed = m_timer.getSysElapsedTimeForPreviousOperation();
+         if (out_flag == false) {
+             std::cout <<
+                 "Average iteration time " <<
+                 time_passed / iteration <<
+                 std::endl;
+             out_flag = true;
+         }
+    }
 
     if (ui_showIdx > 0) {
       showGBuffer(pbo_dptr, ui_showIdx);

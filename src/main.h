@@ -20,6 +20,8 @@
 #include "utilities.h"
 #include "scene.h"
 
+#include "PerformanceTimer.h"
+
 using namespace std;
 
 //-------------------------------
@@ -48,7 +50,7 @@ extern const char* ui_showItem[];
 extern const int ui_ItemNum;
 extern int ui_denoiseIteration;
 
-void runCuda();
+void runCuda(PerformanceTimer& m_timer);
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
