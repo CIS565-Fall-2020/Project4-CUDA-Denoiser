@@ -4,6 +4,7 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include "glm/glm.hpp"
+#include "cfg.h"
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
@@ -79,7 +80,12 @@ struct ShadeableIntersection {
 // What information might be helpful for guiding a denoising filter?
 struct GBufferPixel {
   float t;
+#if oct_encode
+  glm::vec2 normal;
+#else
   glm::vec3 normal;
+#endif
+  
   glm::vec3 world_p;
   glm::vec3 originColor;
 };

@@ -23,4 +23,8 @@ namespace utilityCore {
     extern glm::mat4 buildTransformationMatrix(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale);
     extern std::string convertIntToString(int number);
     extern std::istream& safeGetline(std::istream& is, std::string& t); //Thanks to http://stackoverflow.com/a/6089413
+    // jack12 add oct encoding
+
+    glm::vec2 signNotZero(const glm::vec2& v);
+    glm::vec2 float32_3_to_oct(const glm::vec3& v);
 }

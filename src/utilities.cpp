@@ -110,3 +110,13 @@ std::istream& utilityCore::safeGetline(std::istream& is, std::string& t) {
         }
     }
 }
+
+glm::vec2 utilityCore::signNotZero(const glm::vec2& v) {
+    return glm::vec2(
+        v.x >= 0.0f ? 1.0f : -1.0f, 
+        v.y >= 0.0f ? 1.0f : -1.0f);
+}
+
+glm::vec2 utilityCore::float32_3_to_oct(const glm::vec3& v) {
+    glm::vec2 p = glm::vec2(v) * (1.0f / (abs(v.x) + abs(v.y) + abs(v.z)));
+}
