@@ -29,6 +29,8 @@ float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
+int cur_gbuffer = 0;
+bool denoise_computed = false;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -166,9 +168,30 @@ void runCuda() {
     }
 
     if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+      showGBuffer(pbo_dptr, cur_gbuffer);
     } else {
-      showImage(pbo_dptr, iteration);
+      showImage(pbo_dptr, iteration, denoise_computed);
+    }
+
+    // compute denoised image
+    if (ui_denoise) {
+        if (!denoise_computed) {
+            // compute denoised image from current buffers
+            // use blur width to determine number of denoise iterations (assume filter dim is 5x5)
+            int denoise_iter = 1;
+            int max_width = 5; // replace this later with a variable
+            while (max_width < ui_filterSize) {
+                max_width += (int)glm::pow(2, denoise_iter + 1);
+                denoise_iter++;
+            }
+            // denoise the image
+            denoiseImage(denoise_iter, ui_colorWeight, ui_normalWeight, ui_positionWeight);
+            denoise_computed = true;
+        }
+    }
+    else {
+        // set denoise_computed back to false
+        if (denoise_computed) denoise_computed = false;
     }
 
     // unmap buffer object
@@ -191,6 +214,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         break;
       case GLFW_KEY_S:
         saveImage();
+        break;
+      case GLFW_KEY_UP:
+        // change buffer mode
+        cur_gbuffer = cur_gbuffer + 1 >= END ? 0 : cur_gbuffer + 1;
         break;
       case GLFW_KEY_SPACE:
         camchanged = true;
