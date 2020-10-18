@@ -591,6 +591,8 @@ void pathtrace(int frame, int iter) {
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,
             pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	cudaMemcpy(hst_scene->state.imageDenoised.data(), dev_image_denoised,
+		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
     checkCUDAError("pathtrace");
 }

@@ -37,7 +37,6 @@ extern int startupIterations;
 extern bool ui_showGbuffer;
 extern bool ui_denoise;
 extern int ui_filterSize;
-extern int ui_filterIterations;
 extern float ui_colorWeight;
 extern float ui_normalWeight;
 extern float ui_positionWeight;

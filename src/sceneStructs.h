@@ -58,9 +58,10 @@ struct RenderState {
     std::vector<glm::vec3> image;
     std::string imageName;
 
+	std::vector<glm::vec3> imageDenoised;
+
 	// denoiser parameters
 	int filterSize;
-	int filterIterations;
 };
 
 struct PathSegment {
