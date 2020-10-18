@@ -47,7 +47,7 @@ CUDA Denoiser For CUDA Path Tracer
     Without denoising, each iteration takes about ~37 ms. But when denoising is turned on, each iteration takes ~100 ms.
     So each iteration of filtering can take up to 12 ms. 
 
-    This additional run time by denoiser can become more trivial in cases where raw path tracing takes longer time. 
+    This additional run time by denoiser can become more trivial in cases where raw path tracing takes longer time (eg. higher resolution). 
 
   * Tested with 'scenes/cornell_ceiling_light.txt', filter size 80
   
