@@ -36,11 +36,12 @@ extern int ui_iterations;
 extern int startupIterations;
 extern bool ui_showGbuffer;
 extern bool ui_denoise;
-extern int ui_filterSize;
-extern float ui_colorWeight;
-extern float ui_normalWeight;
-extern float ui_positionWeight;
+extern int ui_filterLevelNum;
+extern float ui_colorPhi;
+extern float ui_normalPhi;
+extern float ui_positionPhi;
 extern bool ui_saveAndExit;
+extern bool ui_denoiseDirty;
 
 void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
