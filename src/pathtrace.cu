@@ -138,6 +138,7 @@ static glm::vec3 *dev_denoiser_A = NULL;
 static glm::vec3 *dev_denoiser_B = NULL;
 static glm::vec3 *dev_w_len = NULL;
 static glm::vec3 *dev_w_len2 = NULL;
+static glm::vec3 *dev_image_denoised = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -173,6 +174,9 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_w_len2, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_w_len2, 0, pixelcount * sizeof(glm::vec3));
 
+	cudaMalloc(&dev_image_denoised, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_image_denoised, 0, pixelcount * sizeof(glm::vec3));
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -188,6 +192,7 @@ void pathtraceFree() {
 	cudaFree(dev_denoiser_B);
 	cudaFree(dev_w_len);
 	cudaFree(dev_w_len2);
+	cudaFree(dev_image_denoised);
 
     checkCUDAError("pathtraceFree");
 }
@@ -338,13 +343,14 @@ __global__ void shadeSimpleMaterials (
 __global__ void kernATrous(
 	Camera cam,
 	int iter,
+	int rt_iter,
 	int filter_size,
 	float var_rt,
 	float var_n,
 	float var_x,
 	glm::vec3 *denoiserA, 
 	glm::vec3 *denoiserB,
-	PathSegment *pathSegments,
+	glm::vec3 *image,
 	GBufferPixel *gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -375,7 +381,7 @@ __global__ void kernATrous(
 				//float gaussian = exp(-(i * i + j * j) * stepwidth * stepwidth / 2.f);
 				int r_idx = rx + ry * cam.resolution.x;
 
-				glm::vec3 t = pathSegments[idx].color - pathSegments[r_idx].color;
+				glm::vec3 t = (image[idx] - image[r_idx]) / (float) rt_iter;
 				float w_rt = min(1.f, exp(-glm::dot(t, t) / var_rt));
 				t = normal - gBuffer[r_idx].nor;
 				float w_n = min(1.f, exp(-glm::dot(t, t) / var_n));
@@ -386,7 +392,7 @@ __global__ void kernATrous(
 				norm_factor += w;
 				if (iter == 1) {
 					// read from raytraced, paths -> B
-					acc += w * pathSegments[r_idx].color;
+					acc += w * image[r_idx] / (float) rt_iter;
 				}
 				else {
 					// A -> B
@@ -444,12 +450,12 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	}
 }
 
-__global__ void finalGatherDenoise(int nPaths, glm::vec3 *image, glm::vec3 *iterationDenoise) {
+__global__ void finalGatherDenoise(int nPaths, glm::vec3 *image, glm::vec3 *denoised) {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (index < nPaths)
 	{
-		image[index] += iterationDenoise[index];
+		image[index] = denoised[index];
 	}
 }
 
@@ -551,6 +557,9 @@ void pathtrace(int frame, int iter) {
 	}
 
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
+	// Assemble this iteration and apply it to the image
+	finalGather <<<numBlocksPixels, blockSize1d >>> (num_paths, dev_image, dev_paths);
+
 	if (ui_denoise) {
 		// Denoising
 		kernFillWeightArrays<<<numBlocksPixels, blockSize1d >>>(num_paths, dev_w_len, dev_w_len2, dev_paths, dev_gBuffer);
@@ -564,20 +573,16 @@ void pathtrace(int frame, int iter) {
 		float var_x = sum2.z / num_paths - u_x * u_x;
 
 		const int filterSize = ui_filterSize;
-		int filterIterations = filterSize / 25; // use 5x5 filter
+		int filterIterations = log2(filterSize / 5) + 1;
 		for (int i = 1; i <= filterIterations; i++) {
-			kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, var_rt, var_n, var_x,
-				dev_denoiser_A, dev_denoiser_B, dev_paths, dev_gBuffer);
+			kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, iter, filterSize, var_rt, var_n, var_x,
+				dev_denoiser_A, dev_denoiser_B, dev_image, dev_gBuffer);
 			glm::vec3 *tmp = dev_denoiser_A;
 			dev_denoiser_A = dev_denoiser_B;
 			dev_denoiser_B = tmp;
 		}
 		// Assemble denoised iteration and apply it to the image
-		finalGatherDenoise<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_denoiser_A);
-	}
-	else {
-		// Assemble this iteration and apply it to the image
-		finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+		finalGatherDenoise<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image_denoised, dev_denoiser_A);
 	}
     ///////////////////////////////////////////////////////////////////////////
 
@@ -596,7 +601,7 @@ void showDenoiser(uchar4 *pbo) {
 	const dim3 blocksPerGrid2d(
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-	denoiserToPBO<<<blocksPerGrid2d, blockSize2d >>>(pbo, cam.resolution, dev_denoiser_B);
+	denoiserToPBO<<<blocksPerGrid2d, blockSize2d >>>(pbo, cam.resolution, dev_image_denoised);
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
