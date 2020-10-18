@@ -132,8 +132,8 @@ void imperfectSpecularReflection(
 
         float mu_1 = u01(rng); // random number
         float mu_2 = u01(rng);
-        float theta_s = acos(powf(u01(rng), 1.0 / (n + 1)));
-        float phi_s = 2.0 * PI * mu_2;
+        float theta_s = acos(powf(u01(rng), 1.0f / (n + 1)));
+        float phi_s = 2.0f * PI * mu_2;
 
         float cos_phi_s = cos(phi_s);
         float sin_phi_s = sin(phi_s);

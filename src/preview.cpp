@@ -74,7 +74,7 @@ void save_img_from_frame(
 
     // CHECKITOUT
     img.savePNG(filename);
-    delete buffer;
+    delete [] buffer;
 }
 
 void initVAO(void) {

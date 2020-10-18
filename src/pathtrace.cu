@@ -70,6 +70,27 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
     }
 }
 
+__host__ __device__ glm::vec2 signNotZero(const glm::vec2& v) {
+    return glm::vec2(
+        v.x >= 0.0f ? 1.0f : -1.0f,
+        v.y >= 0.0f ? 1.0f : -1.0f);
+}
+
+__host__ __device__ glm::vec3 oct_to_float32_3(const glm::vec2& e) {
+    glm::vec3 v = glm::vec3(e.x, e.y, 1.0f - abs(e.x) - abs(e.y));
+    if (v.z < 0) {
+        glm::vec2 v_xy = (glm::vec2(1.0f) - glm::abs(glm::vec2(v.y, v.x)) * signNotZero(glm::vec2(v)));
+        v.x = v_xy.x;
+        v.y = v_xy.y;
+    }
+    return glm::normalize(v);
+}
+
+__host__ __device__ glm::vec2 float32_3_to_oct(const glm::vec3& v) {
+    glm::vec2 p = glm::vec2(v) * (1.0f / (abs(v.x) + abs(v.y) + abs(v.z)));
+    return (v.z <= 0.0f) ? (signNotZero(p) * (glm::vec2(1.0f) - glm::abs(glm::vec2(p.y, p.x)))) : p;
+}
+
 __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, int show_idx) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -86,7 +107,13 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
         }
         else if (show_idx == 2) {
             // map from [-1, 1] to [0, 256]
-            glm::vec3 fake_normal = (gBuffer[index].normal + glm::vec3(1.0f) ) * 0.5f * 255.0f;
+#if oct_encode
+            glm::vec3 fake_normal = (oct_to_float32_3(gBuffer[index].normal) + glm::vec3(1.0f)) * 0.5f * 255.0f;
+#else
+            glm::vec3 fake_normal = (gBuffer[index].normal + glm::vec3(1.0f)) * 0.5f * 255.0f;
+#endif
+
+            
 
             pbo[index].w = 0;
             pbo[index].x = fake_normal.x;
@@ -361,12 +388,19 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
+#if oct_encode
+    gBuffer[idx].normal = float32_3_to_oct(shadeableIntersections[idx].surfaceNormal);
+    float2 p = make_float2(gBuffer[idx].normal.x, gBuffer[idx].normal.y);
+#else
     gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+#endif
+    
     // position
     gBuffer[idx].world_p = getPointOnRay(
         pathSegments[idx].ray, 
         shadeableIntersections[idx].t
     ); 
+    float3 w_p = make_float3(gBuffer[idx].world_p.x, gBuffer[idx].world_p.y, gBuffer[idx].world_p.z);
   }
 }
 
@@ -583,8 +617,16 @@ __global__ void SubStep_A_Trous(
             // Convolve
             
 #if edge_avoid
-            
+
+#if oct_encode
+            glm::vec3 p_normal = oct_to_float32_3(gBuffer[index].normal);
+            float2 p_2 = make_float2(gBuffer[index].normal.x, gBuffer[index].normal.y);
+            float3 p_3 = make_float3(p_normal.x, p_normal.y, p_normal.z);
+#else
             glm::vec3 p_normal = gBuffer[index].normal;
+
+#endif
+            
             glm::vec3 p_position = gBuffer[index].world_p;
             glm::vec3 p_color = gBuffer[index].originColor;
 #endif
@@ -601,7 +643,15 @@ __global__ void SubStep_A_Trous(
 
                         
 #if edge_avoid
+
+#if oct_encode
+                        glm::vec3 q_normal = oct_to_float32_3(gBuffer[cur_index].normal);
+                        float3 q_3 = make_float3(q_normal.x, q_normal.y, q_normal.z);
+                        float2 q_2 = make_float2(gBuffer[cur_index].normal.x, gBuffer[cur_index].normal.y);
+#else
                         glm::vec3 q_normal = gBuffer[cur_index].normal;
+#endif
+                        
                         glm::vec3 q_position = gBuffer[cur_index].world_p;
                         glm::vec3 q_color = gBuffer[cur_index].originColor;
 
@@ -699,7 +749,12 @@ void getVariance(const GBufferPixel* dev_gBuffer) {
 
     glm::vec3 normal_mean, position_mean, color_mean;
     for (int i = 0; i < pixelcount; i++) {
+#if oct_encode
+        normal_mean += oct_to_float32_3(host_gBuffer[i].normal);
+#else
         normal_mean += host_gBuffer[i].normal;
+#endif
+        
         position_mean += host_gBuffer[i].world_p;
         color_mean += host_gBuffer[i].originColor;
     }
@@ -708,7 +763,12 @@ void getVariance(const GBufferPixel* dev_gBuffer) {
     color_mean /= (float)pixelcount;
 
     for (int i = 0; i < pixelcount; i++) {
+#if oct_encode
+        normal_var += glm::length(normal_mean - oct_to_float32_3(host_gBuffer[i].normal));
+#else
         normal_var += glm::length(normal_mean - host_gBuffer[i].normal);
+#endif
+        
         position_var += glm::length(position_mean - host_gBuffer[i].world_p);
         origin_color_var += glm::length(color_mean - host_gBuffer[i].originColor);
     }

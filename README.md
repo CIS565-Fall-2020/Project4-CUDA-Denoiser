@@ -84,6 +84,8 @@ Also for better saving, instead of saving by parsing the host image pointer, her
 
 ### Extra Credit:
 
+##### Gbuffer optimization:
+
 
 
 ### Acknowledge
