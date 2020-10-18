@@ -56,6 +56,8 @@ When denoising Cornell Box with smaller area light, it works much worse than bri
 
 ![](./img/cornellDenoised.png)
 
+![](./img/halloweenComp.JPG)
+
 It is also tricky to tune parameters for the Gaussian kernel.
 
 The author mentioned in the paper that, for highly complex scenes, the algorithm is problematic since low number of samples no longer suffice to capture the necessary information.
