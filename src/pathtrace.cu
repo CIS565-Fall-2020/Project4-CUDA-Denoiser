@@ -344,25 +344,17 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     // Fill gBuffer intersection t data
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+    float t = shadeableIntersections[idx].t;
+    GBufferPixel temp;
 
     // Fill gBuffer intersection position data
-    if (shadeableIntersections[idx].t > 0.f) gBuffer[idx].pos = getPointOnRay(pathSegments[idx].ray, shadeableIntersections[idx].t);
-    else {
-        gBuffer[idx].pos = glm::vec3(0.f);
+    if (t > 0.f) {
+        temp.pos = getPointOnRay(pathSegments[idx].ray, t);
+        temp.nor = shadeableIntersections[idx].surfaceNormal;
+        temp.color = materials[shadeableIntersections[idx].materialId].color;
     }
-
-    // Fill gBuffer normal data
-    if (shadeableIntersections[idx].t > 0.f) gBuffer[idx].nor = shadeableIntersections[idx].surfaceNormal;
-    else {
-        gBuffer[idx].nor = glm::vec3(0.f);
-    }
-    
-    // Fill gBuffer color data
-    if (shadeableIntersections[idx].t > 0.f) gBuffer[idx].color = materials[shadeableIntersections[idx].materialId].color;
-    else {
-        gBuffer[idx].color = glm::vec3(0.f);
-    }
+    temp.t = t;
+    gBuffer[idx] = temp;
   }
 }
 
@@ -417,17 +409,17 @@ __global__ void computeDenoisedImage(
             float dp_y = denoisedInput[pix_idx].y;
             float dp_z = denoisedInput[pix_idx].z;
             glm::vec3 diff = glm::vec3(d_x, d_y, d_z) - glm::vec3(dp_x, dp_y, dp_z);
-            float len = glm::sqrt(glm::dot(diff, diff));
+            float len = glm::dot(diff, diff);
             float c_w = glm::min(glm::exp(-(len) / cPhi), 1.f);
 
             // Compute n_w
             diff = gBuffer[index].nor - gBuffer[pix_idx].nor;
-            len = glm::sqrt(glm::dot(diff, diff) / (stepWidth * stepWidth));
+            len = glm::dot(diff, diff) / (stepWidth * stepWidth);
             float n_w = glm::min(glm::exp(-(len) / nPhi), 1.f);
 
             // Compute p_w
             diff = gBuffer[index].pos - gBuffer[pix_idx].pos;
-            len = glm::sqrt(glm::dot(diff, diff));
+            len = glm::dot(diff, diff);
             float p_w = glm::min(glm::exp(-(len) / pPhi), 1.f);
 
             // weight
@@ -441,7 +433,7 @@ __global__ void computeDenoisedImage(
         }
 
         // write the output
-        denoisedOutput[index] = colorSum / weightSum;
+        denoisedOutput[index] = (colorSum / weightSum);
     }
 }
 
@@ -577,9 +569,9 @@ void denoiseImage(int num_iters, float c_phi, float n_phi, float p_phi) {
                 hst_filter.size(),
                 dev_filter,
                 dev_offset,
-                c_phi * c_phi,
-                p_phi * p_phi,
-                n_phi * n_phi,
+                c_phi,
+                p_phi,
+                n_phi,
                 glm::pow(2, i),
                 cam.resolution);
         checkCUDAError("denoise image");
