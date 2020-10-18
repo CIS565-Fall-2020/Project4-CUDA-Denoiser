@@ -354,6 +354,9 @@ __global__ void kernATrous(
 		int stepwidth = (int) pow(2.f, (float)iter - 1.f);
 
 		int r = filter_size / 2;
+		// TODO
+		r = 2;
+		float h[3] = { 3.f / 8.f, 1.f / 8.f, 1.f / 16.f };
 		glm::vec3 acc = glm::vec3(0.f);
 		float norm_factor = 0.0f;
 		glm::vec3 normal = gBuffer[idx].nor;
@@ -367,7 +370,9 @@ __global__ void kernATrous(
 				if (rx < 0 || rx >= cam.resolution.x || ry < 0 || ry >= cam.resolution.y) {
 					continue;
 				}
-				float gaussian = exp(-(i * i + j * j) * stepwidth * stepwidth / 2.f);
+				int d = (int) max(abs(i), abs(j));
+				float gaussian = h[d];
+				//float gaussian = exp(-(i * i + j * j) * stepwidth * stepwidth / 2.f);
 				int r_idx = rx + ry * cam.resolution.x;
 
 				float w_rt = min(1.f, exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_rt));
@@ -549,8 +554,8 @@ void pathtrace(int frame, int iter) {
 	float var_x = sum2.z / num_paths - u_x * u_x;
 
 	const int filterSize = ui_filterSize;
-
-	for (int i = 1; i <= ui_filterIterations; i++) {
+	int filterIterations = filterSize / 25;
+	for (int i = 1; i <= filterIterations; i++) {
 		kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, var_rt, var_n, var_x, 
 			dev_denoiser_A, dev_denoiser_B, dev_paths, dev_gBuffer);
 		glm::vec3 *tmp = dev_denoiser_A;
