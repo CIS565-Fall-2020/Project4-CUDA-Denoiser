@@ -683,7 +683,6 @@ void denoise() {
         c_phi *= 0.5f;
         std::swap(dev_denoisePingpong, dev_image);
     }
-    std::swap(dev_denoisePingpong, dev_image);
 }
 
 /**
@@ -805,7 +804,7 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
 	    cudaDeviceSynchronize();
 	    
         // Capture G-Buffer from segment and intersection in the first iteration
-        if (depth == 0) {
+        if (iter == 1 && depth == 0) {
             captureGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths,
                 dev_paths, dev_intersections, dev_gBuffer);
         }
