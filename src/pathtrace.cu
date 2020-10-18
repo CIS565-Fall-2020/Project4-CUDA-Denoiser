@@ -126,6 +126,9 @@ static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
+static glm::ivec2* dev_offset = NULL;
+static float* dev_filter = NULL;
+static int lvlimit = 0;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -155,6 +158,17 @@ void pathtraceInit(Scene* scene) {
 	cudaMemset(dev_bufferImage, 0, pixelcount * sizeof(glm::vec3));
 
 	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+
+	// these will probably need to be arguments into this function from the ui
+	int lvlimit = 5;
+	int filterWidth = 5;
+
+	std::vector<glm::ivec2> offset(filterWidth * filterWidth);
+
+	cudaMalloc(&dev_offset, filterWidth * filterWidth * sizeof(glm::ivec2));
+	cudaMemcpy(dev_offset, offset.data(), filterWidth * filterWidth * sizeof(glm::ivec2), cudaMemcpyHostToDevice);
+
+	std::vector<float> kernel(filterWidth * filterWidth);
 
 	checkCUDAError("pathtraceInit");
 }
@@ -353,10 +367,9 @@ __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, PathSegment* iter
 // Add the current iteration's output to the overall image
 __global__ void denoise(glm::ivec2 resolution, 
 						int stepWidth, 
-						GBufferPixel* gBuffer, 
-						PathSegment* iterationPaths, 
+						GBufferPixel* gBuffer,
 						glm::ivec2* offset,
-						glm::vec2* kernel,
+						float* kernel,
 						glm::vec3* image)
 {
 	// 2-D to 1-D ***
@@ -376,26 +389,38 @@ __global__ void denoise(glm::ivec2 resolution,
 	{
 		int idx = x + (y * resolution.x);
 
+		float c_phi = 1.f;
+		float n_phi = 1.f;
+		float p_phi = 1.f;
+
 		glm::vec3 sum = glm::vec3(0.f);
 		GBufferPixel GBPix = gBuffer[idx];
-		glm::vec3 cval = GBPix.c;
-		glm::vec3 nval = GBPix.n;
-		glm::vec3 pval = GBPix.p;
 
 		float cum_w = 0.f;
 		for (int i = 0; i < 25; i++) {
 			glm::ivec2 idx2 = offset[i] * stepWidth + glm::ivec2(x, y);
+			idx2 = glm::min(glm::max(idx2, 0), resolution);		// clamp the index of the sampling pixel
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
-			glm::vec3 ctmp = GBPix2.c;
 
-			glm::vec3 t = cval - ctmp;
+			glm::vec3 t = GBPix.c - GBPix2.c;
+			float dist2 = glm::dot(t, t);
+			float c_w = min(exp(-dist2/c_phi), 1.f);
 
-			float c_w = __min(0.f, 1.f);
+			t = GBPix.n - GBPix2.n;
+			dist2 = max(glm::dot(t, t) / 1.f, 0.f);
+			float n_w = min(exp(-dist2 / n_phi), 1.f);
+
+			t = GBPix.p - GBPix2.p;
+			dist2 = glm::dot(t, t);
+			float p_w = min(exp(-dist2 / p_phi), 1.f);
+
+			float weight = c_w * n_w * p_w;
+			sum += GBPix2.c * weight * kernel[i];
 		}
 
-		PathSegment iterationPath = iterationPaths[idx];
-		image[iterationPath.pixelIndex] += iterationPath.color;
+		//PathSegment iterationPath = iterationPaths[idx];
+		//image[iterationPath.pixelIndex] += iterationPath.color;
 
 		image[idx] = sum / cum_w;
 	}
@@ -503,7 +528,11 @@ void pathtrace(int frame, int iter) {
 	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_paths);
 
 	// call denoise here (2-D)
-	glm::vec2 offset[25]
+	for (int i = 1; i <= (1 << lvlimit); i << 1) {
+		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, i, dev_gBuffer, offset, kernel, dev_image);
+		checkCUDAError("denoise");
+	}
+
 
 	///////////////////////////////////////////////////////////////////////////
 
