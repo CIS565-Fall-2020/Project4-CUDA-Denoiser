@@ -628,6 +628,7 @@ __global__ void SubStep_A_Trous(
         
        
 #else
+        // I haven't implemented matrix version
         int x_offset = -2, y_offset = -2;
         for (int pix = 0; pix < 25; pix++) {
 
