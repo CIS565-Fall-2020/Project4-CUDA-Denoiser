@@ -90,7 +90,8 @@ static PathSegment * dev_paths = NULL;
 static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
-// ...
+static glm::vec3 * dev_imageDenoised0 = NULL;
+static glm::vec3 * dev_imageDenoised1 = NULL;		// An image buffer for denoising
 
 void pathtraceInit(Scene *scene) {
 	hst_scene = scene;
@@ -114,6 +115,10 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
 	// TODO: initialize any extra device memeory you need
+	cudaMalloc(&dev_imageDenoised0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_imageDenoised0, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_imageDenoised1, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_imageDenoised1, 0, pixelcount * sizeof(glm::vec3));
 
 	checkCUDAError("pathtraceInit");
 }
@@ -126,7 +131,8 @@ void pathtraceFree() {
 	cudaFree(dev_intersections);
 	cudaFree(dev_gBuffer);
 	// TODO: clean up any extra device memory you created
-
+	cudaFree(dev_imageDenoised0);
+	cudaFree(dev_imageDenoised1);
 	checkCUDAError("pathtraceFree");
 }
 
@@ -161,13 +167,8 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 }
 
 __global__ void computeIntersections(
-	int depth
-	, int num_paths
-	, PathSegment * pathSegments
-	, Geom * geoms
-	, int geoms_size
-	, ShadeableIntersection * intersections
-)
+	int depth, int num_paths, PathSegment * pathSegments, Geom * geoms,
+	int geoms_size, ShadeableIntersection * intersections)
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -226,12 +227,8 @@ __global__ void computeIntersections(
 }
 
 __global__ void shadeSimpleMaterials(
-	int iter
-	, int num_paths
-	, ShadeableIntersection * shadeableIntersections
-	, PathSegment * pathSegments
-	, Material * materials
-)
+	int iter, int num_paths, ShadeableIntersection * shadeableIntersections,
+	PathSegment * pathSegments, Material * materials)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < num_paths)
@@ -260,10 +257,10 @@ __global__ void shadeSimpleMaterials(
 				glm::vec3 intersectPos = intersection.t * segment.ray.direction + segment.ray.origin;
 				scatterRay(segment, intersectPos, intersection.surfaceNormal, material, rng);
 			}
-			// If there was no intersection, color the ray black.
-			// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
-			// used for opacity, in which case they can indicate "no opacity".
-			// This can be useful for post-processing and image compositing.
+		// If there was no intersection, color the ray black.
+		// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
+		// used for opacity, in which case they can indicate "no opacity".
+		// This can be useful for post-processing and image compositing.
 		}
 		else {
 			segment.color = glm::vec3(0.0f);
@@ -283,6 +280,8 @@ __global__ void generateGBuffer(
 	if (idx < num_paths)
 	{
 		gBuffer[idx].t = shadeableIntersections[idx].t;
+		gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+		gBuffer[idx].position = getPointOnRay(pathSegments[idx].ray, gBuffer[idx].t);
 	}
 }
 
@@ -296,6 +295,95 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 		PathSegment iterationPath = iterationPaths[index];
 		image[iterationPath.pixelIndex] += iterationPath.color;
 	}
+}
+
+__global__ void averageImage(glm::vec3 *image, glm::vec3 *imageDst, glm::ivec2 resolution, int iter)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 pix = image[index];	
+		pix.x = glm::clamp(pix.x / iter, 0.f, 1.f);
+		pix.y = glm::clamp(pix.y / iter, 0.f, 1.f);
+		pix.z = glm::clamp(pix.z / iter, 0.f, 1.f);
+		imageDst[index] = pix;
+	}
+}
+
+__global__ void ATrousFilter(glm::vec3* image, glm::ivec2 resolution, GBufferPixel* gBuffer, 
+	int stepWidth, glm::vec3* imageDst, float cphi, float nphi, float pphi)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		float h[5] = { 1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0 };
+		glm::vec3 sum = glm::vec3(0.f);
+		glm::vec2 step = glm::vec2(1.f / resolution.x, 1.f / resolution.y);
+		int index = y * resolution.x + x;
+		glm::vec3 cval = image[index];
+		glm::vec3 nval = gBuffer[index].normal;
+		glm::vec3 pval = gBuffer[index].position;
+		float sumw = 0.f;
+		for (int j = 0; j < 5; ++j)
+		{
+			for (int i = 0; i < 5; ++i)
+			{
+				glm::ivec2 nb = glm::ivec2(x, y) +
+					glm::ivec2((i - 2) * stepWidth, (j - 2) * stepWidth);
+				nb = glm::clamp(nb, glm::ivec2(0, 0), resolution - glm::ivec2(1, 1));
+				int nbIndex = nb.y * resolution.x + nb.x;
+				glm::vec3 cnb = image[nbIndex];
+				glm::vec3 t = cval - cnb;
+				float dist2 = glm::dot(t, t);
+				float cw = glm::min(glm::exp(-dist2 / cphi), 1.f);
+
+				glm::vec3 nnb = gBuffer[nbIndex].normal;
+				t = nnb - nval;
+				dist2 = glm::max(glm::dot(t, t) / (stepWidth, stepWidth), 0.f);
+				float nw = glm::min(glm::exp(-dist2 / nphi), 1.f);
+
+				glm::vec3 pnb = gBuffer[nbIndex].position;
+				t = pnb - pval;
+				dist2 = glm::dot(t, t);
+				float pw = glm::min(glm::exp(-dist2 / pphi), 1.f);
+				float weight = cw * nw * pw;
+				sum += cnb * weight * h[i] * h[j];
+				sumw += weight * h[i] * h[j];
+			}
+		}
+		imageDst[index] = sum / sumw;
+	}
+}
+
+
+void denoise(int filterLevelNum, float cphi, float nphi, float pphi, int iter)
+{
+	const Camera &cam = hst_scene->state.camera;
+	// 2D block for denoise
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
+
+	// Average image by iteration first
+	averageImage << < blocksPerGrid2d, blockSize2d >> > (dev_image, dev_imageDenoised0, cam.resolution, iter);
+
+	for (int i = 1; i <= filterLevelNum; ++i)
+	{
+		ATrousFilter << <blocksPerGrid2d, blockSize2d >> > (dev_imageDenoised0, cam.resolution, dev_gBuffer, 1 << (i - 1),
+			dev_imageDenoised1, cphi, nphi, pphi);
+		std::swap(dev_imageDenoised0, dev_imageDenoised1);
+	}
+
+	// Send results to OpenGL buffer for rendering
+	cudaMemcpy(hst_scene->state.image.data(), dev_imageDenoised0,
+		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+
+	checkCUDAError("denoise");
 }
 
 /**
@@ -431,4 +519,16 @@ void showImage(uchar4* pbo, int iter) {
 
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+}
+
+void showDenoisedImage(uchar4 * pbo)
+{
+	const Camera &cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, 1, dev_imageDenoised0);
 }
