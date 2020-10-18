@@ -41,6 +41,7 @@ extern float ui_colorPhi;
 extern float ui_normalPhi;
 extern float ui_positionPhi;
 extern bool ui_saveAndExit;
+extern bool ui_denoiseDirty;
 
 void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);

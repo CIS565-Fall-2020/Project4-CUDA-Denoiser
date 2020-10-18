@@ -1,7 +1,7 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
-
+#include <chrono>
 #include "../imgui/imgui.h"
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
@@ -24,11 +24,12 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterLevelNum = 2;
+int ui_filterLevelNum = 4;
 float ui_colorPhi = 0.45f;
 float ui_normalPhi = 0.35f;
 float ui_positionPhi = 0.2f;
 bool ui_saveAndExit = false;
+bool ui_denoiseDirty = true;	// Specify if the denoising parameters change
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -98,7 +99,7 @@ int main(int argc, char** argv) {
 }
 
 void saveImage() {
-	float samples = iteration;
+	float samples = ui_denoise? 1 : iteration;
 	// output image file
 	image img(width, height);
 
@@ -128,6 +129,7 @@ void runCuda() {
 
 	if (camchanged) {
 		iteration = 0;
+		ui_denoiseDirty = true;
 		Camera &cam = renderState->camera;
 		cameraPosition.x = zoom * sin(phi) * sin(theta);
 		cameraPosition.y = zoom * cos(theta);
@@ -162,11 +164,26 @@ void runCuda() {
 
 		// execute the kernel
 		int frame = 0;
+
+		static double timeSum = 0;
+		auto t1 = std::chrono::high_resolution_clock::now();
 		pathtrace(frame, iteration);
+		auto t2 = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> timeSpan = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+		timeSum += timeSpan.count();
+		if (iteration == ui_iterations)
+		{
+			std::cout << "Iteration:" << iteration << "   elapsed time: " << timeSum << "s    " << std::endl;
+		}
 	}
-	else if (iteration == ui_iterations && ui_denoise)
+	else if (iteration == ui_iterations && ui_denoise && ui_denoiseDirty)
 	{
+		auto t1 = std::chrono::high_resolution_clock::now();
 		denoise(ui_filterLevelNum, ui_colorPhi, ui_normalPhi, ui_positionPhi, iteration);
+		auto t2 = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> timeSpan = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+		std::cout << "Denoise:" << "   elapsed time: " << timeSpan.count() << "s    " << std::endl;
+		ui_denoiseDirty = false;
 	}
 
 	if (ui_showGbuffer) {
