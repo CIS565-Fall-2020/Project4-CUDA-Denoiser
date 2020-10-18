@@ -1,3 +1,5 @@
+added dev_bufferImage to the pathtrace.cu
+
 filter size = filter width
 
 Ctrl + K, Ctrl  F

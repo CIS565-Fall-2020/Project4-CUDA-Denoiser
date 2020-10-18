@@ -154,6 +154,8 @@ void pathtraceInit(Scene* scene) {
 	cudaMalloc(&dev_bufferImage, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_bufferImage, 0, pixelcount * sizeof(glm::vec3));
 
+	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -324,22 +326,75 @@ __global__ void generateGBuffer(
 	{
 		ShadeableIntersection si = shadeableIntersections[idx];
 		PathSegment ps = pathSegments[idx];
-		gBuffer[idx].t = si.t;
-		gBuffer[idx].c = ps.color;
-		gBuffer[idx].n = si.surfaceNormal;
-		gBuffer[idx].p = ps.ray.direction * si.t;
+		gBuffer[ps.pixelIndex].t = si.t;
+		gBuffer[ps.pixelIndex].c += ps.color;
+		// gBuffer[ps.pixelIndex].c = ps.color;
+		gBuffer[ps.pixelIndex].n = si.surfaceNormal;
+		gBuffer[ps.pixelIndex].p = ps.ray.direction * si.t;
+		//gBuffer[idx].t = si.t;
+		//gBuffer[idx].c = ps.color;
+		//gBuffer[idx].n = si.surfaceNormal;
+		//gBuffer[idx].p = ps.ray.direction * si.t;
 	}
 }
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+__global__ void finalGather(int nPaths, GBufferPixel* gBuffer, PathSegment* iterationPaths)
 {
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
 
-	if (index < nPaths)
+	if (idx < nPaths)
 	{
-		PathSegment iterationPath = iterationPaths[index];
+		PathSegment iterationPath = iterationPaths[idx];
+		gBuffer[iterationPath.pixelIndex].c += iterationPath.color;
+	}
+}
+
+// Add the current iteration's output to the overall image
+__global__ void denoise(glm::ivec2 resolution, 
+						int stepWidth, 
+						GBufferPixel* gBuffer, 
+						PathSegment* iterationPaths, 
+						glm::ivec2* offset,
+						glm::vec2* kernel,
+						glm::vec3* image)
+{
+	// 2-D to 1-D ***
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	//if (x < resolution.x && y < resolution.y)
+	//	int index = x + (y * resolution.x);
+
+	// 1-D to 2-D
+	//int x = idx % cam.resolution.y;
+	//int y = idx / cam.resolution.y;
+
+	//int pixelCount = resolution.x * resolution.y;
+
+	if (x < resolution.x && y < resolution.y)
+	{
+		int idx = x + (y * resolution.x);
+
+		glm::vec3 sum = glm::vec3(0.f);
+		GBufferPixel GBPix = gBuffer[idx];
+		glm::vec3 cval = GBPix.c;
+		glm::vec3 nval = GBPix.n;
+		glm::vec3 pval = GBPix.p;
+
+		float cum_w = 0.f;
+		for (int i = 0; i < 25; i++) {
+			glm::ivec2 idx2 = offset[i] * stepWidth + glm::ivec2(x, y);
+
+			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
+			glm::vec3 ctmp = GBPix2.c;
+
+		}
+
+		PathSegment iterationPath = iterationPaths[idx];
 		image[iterationPath.pixelIndex] += iterationPath.color;
+
+		image[idx] = sum / cum_w;
 	}
 }
 
@@ -403,7 +458,7 @@ void pathtrace(int frame, int iter) {
 	// Shoot ray into scene, bounce between objects, push shading chunks
 
 	// Empty gbuffer
-	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+	//cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
 	// clean shading chunks
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -442,7 +497,10 @@ void pathtrace(int frame, int iter) {
 
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image, dev_paths);
+	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_paths);
+
+	// call denoise here (2-D)
+	glm::vec2 offset[25]
 
 	///////////////////////////////////////////////////////////////////////////
 
@@ -452,8 +510,16 @@ void pathtrace(int frame, int iter) {
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
-	//cudaMemcpy(hst_scene->state.bufferImage.data(), dev_bufferImage,
-	//	pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	// this conditional check is necessary because otherwise a NULL pointer
+	// will be passed to the memcpy function however that memory address
+	// does not exist in host memory.
+	// this occurs because data() can only be initialized
+	// see line 72 of main.cpp
+	if (hst_scene->state.bufferImage.data()) {
+		std::cout << "here" << std::endl;
+		cudaMemcpy(hst_scene->state.bufferImage.data(), dev_bufferImage,
+			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	}
 
 	checkCUDAError("pathtrace");
 }

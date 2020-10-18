@@ -69,6 +69,11 @@ int main(int argc, char** argv) {
     width = cam.resolution.x;
     height = cam.resolution.y;
 
+    // THIS IS VERY NECESSARY IN ORDER TO STOP THE CUDAMEMCPY INTO BUFFERIMAGE
+    // TO STOP CRASHING. this is necessary because the data() pointer will be
+    // NULL if nothing has been put into the image vector
+    scene->state.bufferImage = std::vector<glm::vec3>(width * height);
+
     ui_iterations = renderState->iterations;
     startupIterations = ui_iterations;
 
