@@ -29,13 +29,13 @@ The number of levels will affect both the computation time and the quality of th
 | 3 | 40ms |![](./results/3.png)|
 | 4 | 52ms |![](./results/4.png)|
 | 5 | 64ms |![](./results/5.png)|
-
-![](./results/nol.png)
+  
+![](./results/nol.png)  
 It is clear that the computation time of the denoiser is linearly dependent on the number of levels.
 
 ### Image Size
-Here we use the number of levels of the filter = 4.
-![](./results/nop.png)
+Here we use the number of levels of the filter = 4.  
+![](./results/nop.png)  
 Similarily, the computation time of the denoiser is also linearly dependent on the number of pixels.
 
 ### Light Size
