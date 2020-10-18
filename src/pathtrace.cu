@@ -127,8 +127,9 @@ static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 static glm::ivec2* dev_offset = NULL;
-static float* dev_filter = NULL;
+static float* dev_kernel = NULL;
 static int lvlimit = 0;
+static int kernelWidth = 0;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -160,15 +161,25 @@ void pathtraceInit(Scene* scene) {
 	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
 	// these will probably need to be arguments into this function from the ui
-	int lvlimit = 5;
-	int filterWidth = 5;
+	lvlimit = 5;
+	kernelWidth = 5;
 
-	std::vector<glm::ivec2> offset(filterWidth * filterWidth);
+	std::vector<glm::ivec2> offset(kernelWidth * kernelWidth);
 
-	cudaMalloc(&dev_offset, filterWidth * filterWidth * sizeof(glm::ivec2));
-	cudaMemcpy(dev_offset, offset.data(), filterWidth * filterWidth * sizeof(glm::ivec2), cudaMemcpyHostToDevice);
+	for (int j = 0; j < kernelWidth; j++)
+		for (int i = 0; i < kernelWidth; i++)
+			offset.at(i + j * kernelWidth) = glm::ivec2(i - kernelWidth / 2, kernelWidth / 2 - j);
 
-	std::vector<float> kernel(filterWidth * filterWidth);
+	cudaMalloc(&dev_offset, kernelWidth * kernelWidth * sizeof(glm::ivec2));
+	cudaMemcpy(dev_offset, offset.data(), kernelWidth * kernelWidth * sizeof(glm::ivec2), cudaMemcpyHostToDevice);
+
+	std::vector<float> kernel(kernelWidth * kernelWidth);
+	kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
+	for (int i = 0; i < kernelWidth * kernelWidth; i++)
+		kernel.at(i) = kernel.at(i) / 273.f;
+
+	cudaMalloc(&dev_kernel, kernelWidth * kernelWidth * sizeof(float));
+	cudaMemcpy(dev_kernel, kernel.data(), kernelWidth * kernelWidth * sizeof(float), cudaMemcpyHostToDevice);
 
 	checkCUDAError("pathtraceInit");
 }
@@ -353,7 +364,7 @@ __global__ void generateGBuffer(
 }
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, GBufferPixel* gBuffer, PathSegment* iterationPaths)
+__global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image, PathSegment* iterationPaths)
 {
 	int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -361,12 +372,17 @@ __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, PathSegment* iter
 	{
 		PathSegment iterationPath = iterationPaths[idx];
 		gBuffer[iterationPath.pixelIndex].c += iterationPath.color;
+		image[iterationPath.pixelIndex] = gBuffer[iterationPath.pixelIndex].c;
+
+		//PathSegment iterationPath = iterationPaths[idx];
+		//image[iterationPath.pixelIndex] += iterationPath.color;
 	}
 }
 
 // Add the current iteration's output to the overall image
 __global__ void denoise(glm::ivec2 resolution, 
 						int stepWidth, 
+						int kernelWidth,
 						GBufferPixel* gBuffer,
 						glm::ivec2* offset,
 						float* kernel,
@@ -393,17 +409,18 @@ __global__ void denoise(glm::ivec2 resolution,
 		float n_phi = 1.f;
 		float p_phi = 1.f;
 
+		glm::vec3 cval = image[idx];
 		glm::vec3 sum = glm::vec3(0.f);
 		GBufferPixel GBPix = gBuffer[idx];
 
 		float cum_w = 0.f;
-		for (int i = 0; i < 25; i++) {
+		for (int i = 0; i < kernelWidth; i++) {
 			glm::ivec2 idx2 = offset[i] * stepWidth + glm::ivec2(x, y);
-			idx2 = glm::min(glm::max(idx2, 0), resolution);		// clamp the index of the sampling pixel
+			idx2 = glm::clamp(idx2, glm::ivec2(0), resolution - 1);		// clamp the index of the sampling pixel
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
 
-			glm::vec3 t = GBPix.c - GBPix2.c;
+			glm::vec3 t = cval - GBPix2.c;
 			float dist2 = glm::dot(t, t);
 			float c_w = min(exp(-dist2/c_phi), 1.f);
 
@@ -417,12 +434,11 @@ __global__ void denoise(glm::ivec2 resolution,
 
 			float weight = c_w * n_w * p_w;
 			sum += GBPix2.c * weight * kernel[i];
+			cum_w += weight * kernel[i];
 		}
 
-		//PathSegment iterationPath = iterationPaths[idx];
-		//image[iterationPath.pixelIndex] += iterationPath.color;
-
 		image[idx] = sum / cum_w;
+		image[idx] = cval;
 	}
 }
 
@@ -431,6 +447,12 @@ __global__ void denoise(glm::ivec2 resolution,
  * of memory management
  */
 void pathtrace(int frame, int iter) {
+
+	std::cout << iter << std::endl;
+
+	if (iter > 9)
+		return;
+
 	const int traceDepth = hst_scene->state.traceDepth;
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -523,16 +545,28 @@ void pathtrace(int frame, int iter) {
 		iterationComplete = depth == traceDepth;
 	}
 
+	checkCUDAError("pathtrace");
+
+	/*
+	CHANGES...
+	The object that will be storing the accumulated pixel values across iters is now dev_gBuffer
+	instead of the dev_image. This was done so that everytime we accumulate across iters in finalGather, we are
+	accumulating over the noisy values because we will be putting the final denoised image in dev_image.
+	*/
+
+
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_paths);
+	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_image, dev_paths);
+
+	checkCUDAError("finalGather");
 
 	// call denoise here (2-D)
-	for (int i = 1; i <= (1 << lvlimit); i << 1) {
-		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, i, dev_gBuffer, offset, kernel, dev_image);
+	/*for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
+		std::cout << stepWidth << std::endl;
+		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
 		checkCUDAError("denoise");
-	}
-
+	}*/
 
 	///////////////////////////////////////////////////////////////////////////
 
@@ -542,18 +576,19 @@ void pathtrace(int frame, int iter) {
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
+	checkCUDAError("imageCopy");
+
 	// this conditional check is necessary because otherwise a NULL pointer
 	// will be passed to the memcpy function however that memory address
 	// does not exist in host memory.
 	// this occurs because data() can only be initialized
 	// see line 72 of main.cpp
 	if (hst_scene->state.bufferImage.data()) {
-		std::cout << "here" << std::endl;
 		cudaMemcpy(hst_scene->state.bufferImage.data(), dev_bufferImage,
 			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 	}
 
-	checkCUDAError("pathtrace");
+	checkCUDAError("bufferImageCopy");
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
