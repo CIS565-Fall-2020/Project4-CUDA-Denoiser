@@ -126,7 +126,7 @@ void saveImage() {
 		for (int y = 0; y < height; y++) {
 			int index = x + (y * width);
 			glm::vec3 pix = renderState->imageDenoised[index];
-			imgDenoised.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+			imgDenoised.setPixel(width - 1 - x, y, glm::vec3(pix));
 		}
 	}
 	ss << "_denoised";
