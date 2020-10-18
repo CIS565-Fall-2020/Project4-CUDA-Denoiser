@@ -46,29 +46,13 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
     return thrust::default_random_engine(h);
 }
 
-struct sum_gBuffer_pos {
-	__host__ __device__ float operator() (const GBufferPixel &p1, const GBufferPixel &p2) {
-		return glm::length(p1.pos) + glm::length(p2.pos);
+struct sum_vec {
+	__host__ __device__ glm::vec3 operator() (glm::vec3 &v1, glm::vec3 &v2) {
+		return v1 + v2;
 	}
 };
 
-struct sum_gBuffer_nor {
-	__host__ __device__ float operator() (const GBufferPixel &p1, const GBufferPixel &p2) {
-		return glm::length(p1.nor) + glm::length(p2.nor);
-	}
-};
 
-struct sum_gBuffer_pos2 {
-	__host__ __device__ float operator() (const GBufferPixel &p1, const GBufferPixel &p2) {
-		return glm::pow(glm::length(p1.pos), 2) + glm::pow(glm::length(p2.pos), 2);
-	}
-};
-
-struct sum_gBuffer_nor2 {
-	__host__ __device__ float operator() (const GBufferPixel &p1, const GBufferPixel &p2) {
-		return glm::pow(glm::length(p1.nor), 2) + glm::pow(glm::length(p2.nor), 2);
-	}
-};
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
         int iter, glm::vec3* image) {
@@ -152,7 +136,8 @@ static GBufferPixel* dev_gBuffer = NULL;
 // ...
 static glm::vec3 *dev_denoiser_A = NULL;
 static glm::vec3 *dev_denoiser_B = NULL;
-static float *dev_gaussian_kernel = NULL;
+static glm::vec3 *dev_w_len = NULL;
+static glm::vec3 *dev_w_len2 = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -182,9 +167,11 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_denoiser_B, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_denoiser_B, 0, pixelcount * sizeof(glm::vec3));
 
-	const int filterSize = ui_filterSize;
-	cudaMalloc(&dev_gaussian_kernel, filterSize * filterSize * sizeof(float));
-	cudaMemset(dev_gaussian_kernel, 0, filterSize * filterSize * sizeof(float));
+	cudaMalloc(&dev_w_len, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_w_len, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_w_len2, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_w_len2, 0, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -199,7 +186,8 @@ void pathtraceFree() {
     // TODO: clean up any extra device memory you created
 	cudaFree(dev_denoiser_A);
 	cudaFree(dev_denoiser_B);
-	cudaFree(dev_gaussian_kernel);
+	cudaFree(dev_w_len);
+	cudaFree(dev_w_len2);
 
     checkCUDAError("pathtraceFree");
 }
@@ -351,12 +339,11 @@ __global__ void kernATrous(
 	Camera cam,
 	int iter,
 	int filter_size,
-	float colorWeight,
-	float normalWeight,
-	float positionWeight,
+	float var_rt,
+	float var_n,
+	float var_x,
 	glm::vec3 *denoiserA, 
 	glm::vec3 *denoiserB,
-	float *gaussianFilter,
 	PathSegment *pathSegments,
 	GBufferPixel *gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -372,10 +359,6 @@ __global__ void kernATrous(
 		glm::vec3 normal = gBuffer[idx].nor;
 		glm::vec3 position = gBuffer[idx].pos;
 
-		float var_rt = colorWeight * colorWeight;
-		float var_n = normalWeight * normalWeight;
-		float var_p = positionWeight * positionWeight;
-
 		for (int i = -r; i <= r; i++) {
 			for (int j = -r; j <= r; j++) {
 				//int d = (i + r) + (j + r) * filter_size;
@@ -389,9 +372,9 @@ __global__ void kernATrous(
 
 				float w_rt = exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_rt);
 				float w_n = exp(-glm::length(normal - gBuffer[r_idx].nor) / var_n);
-				float w_p = exp(-glm::length(position - gBuffer[r_idx].pos) / var_p);
+				float w_p = exp(-glm::length(position - gBuffer[r_idx].pos) / var_x);
 
-				float w = gaussian * colorWeight * normalWeight * positionWeight;
+				float w = gaussian * w_rt * w_n * w_p;
 				norm_factor += w;
 				if (iter == 1) {
 					// read from raytraced, paths -> B
@@ -405,6 +388,23 @@ __global__ void kernATrous(
 		}
 
 		denoiserB[idx] = acc / norm_factor;
+	}
+}
+
+__global__ void kernFillWeightArrays(
+	int num_paths,
+	glm::vec3 *wLens,
+	glm::vec3 *wLens2,
+	PathSegment *pathSegments,
+	GBufferPixel *gBuffer
+) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < num_paths) {
+		float l_rt = glm::l2Norm(pathSegments[idx].color);
+		float l_n = glm::l2Norm(gBuffer[idx].nor);
+		float l_x = glm::l2Norm(gBuffer[idx].pos);
+		wLens[idx] = glm::vec3(l_rt, l_n, l_x);
+		wLens2[idx] = glm::vec3(l_rt * l_rt, l_n * l_n, l_x * l_x);
 	}
 }
 
@@ -538,24 +538,21 @@ void pathtrace(int frame, int iter) {
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
 	// Denoising
-	/*
-	float sum_nor = thrust::reduce(thrust::device, dev_gBuffer, dev_gBuffer + num_paths, 0.f, sum_gBuffer_nor());
-	float sum_pos = thrust::reduce(thrust::device, dev_gBuffer, dev_gBuffer + num_paths, 0.f, sum_gBuffer_pos());
-	float sum_nor2 = thrust::reduce(thrust::device, dev_gBuffer, dev_gBuffer + num_paths, 0.f, sum_gBuffer_nor2());
-	float sum_pos2 = thrust::reduce(thrust::device, dev_gBuffer, dev_gBuffer + num_paths, 0.f, sum_gBuffer_pos2());
-	float u_nor = sum_nor / num_paths;
-	float u_pos = sum_pos / num_paths;
-	float var_n = sum_nor2 / num_paths - u_nor * u_nor;
-	float var_p = sum_pos2 / num_paths - u_pos * u_pos;
-	*/
+	kernFillWeightArrays<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_w_len, dev_w_len2, dev_paths, dev_gBuffer);
+	glm::vec3 sum = thrust::reduce(thrust::device, dev_w_len, dev_w_len + num_paths, glm::vec3(0.f), sum_vec());
+	glm::vec3 sum2 = thrust::reduce(thrust::device, dev_w_len2, dev_w_len2 + num_paths, glm::vec3(0.f), sum_vec());
+	float u_rt = sum.x / num_paths;
+	float u_n = sum.y / num_paths;
+	float u_x = sum.z / num_paths;
+	float var_rt = sum2.x / num_paths - u_rt * u_rt;
+	float var_n = sum2.y / num_paths - u_n * u_n;
+	float var_x = sum2.z / num_paths - u_x * u_x;
 
 	const int filterSize = ui_filterSize;
-	const float colorWeight = ui_colorWeight;
-	const float normalWeight = ui_normalWeight;
-	const float positionWeight = ui_positionWeight;
+
 	for (int i = 1; i <= ui_filterIterations; i++) {
-		kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, colorWeight, normalWeight, positionWeight, 
-			dev_denoiser_A, dev_denoiser_B, dev_gaussian_kernel, dev_paths, dev_gBuffer);
+		kernATrous<<<blocksPerGrid2d, blockSize2d>>>(cam, i, filterSize, var_rt, var_n, var_x, 
+			dev_denoiser_A, dev_denoiser_B, dev_paths, dev_gBuffer);
 		glm::vec3 *tmp = dev_denoiser_A;
 		dev_denoiser_A = dev_denoiser_B;
 		dev_denoiser_B = tmp;
