@@ -59,3 +59,18 @@ CUDA Denoiser For CUDA Path Tracer
 
   I think it's more effective on diffusive materials. Since for diffusive materials, rays are scattered randomly, many rays may not reach emissive light source and the surface can be noisy. Denoising effectively mitigates the randomness and thus creates a smooth surface after fewer iterations. On the other hand, scattering on reflective/refrative surface is a bit more determined, so pixels neighboring each other can be quite similar even without denoising. 
   
+* Varying filter size
+
+  * Using 'scenes/cornell.txt', denoising with filter size 40 takes ~50 ms, whereas denoising with filter size 80 takes ~63 ms. Filter size 40 requires one less filtering iteration than 80, and the difference in time corresponds to exactly one iteration of filtered calculated previously. Smaller filter size reduces run time.
+  
+  * Visual comparison (1000 iterations)
+  
+  Filter size = 40
+  
+  ![](img/cornell.2020-10-18_21-36-05z.1010samp_denoised.png)
+  
+  Filter size = 80
+  
+  ![](img/cornell.2020-10-18_20-59-08z.1009samp_denoised.png)
+  
+  It seems to me that filter size 80 generates a smoother image. For different scenes, there could be different optimal filter sizes.
