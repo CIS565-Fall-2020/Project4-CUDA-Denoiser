@@ -683,6 +683,9 @@ void denoise() {
         c_phi *= 0.5f;
         std::swap(dev_denoisePingpong, dev_image);
     }
+
+    cudaMemcpy(hst_scene->state.image.data(), dev_image,
+        pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
 
 /**
