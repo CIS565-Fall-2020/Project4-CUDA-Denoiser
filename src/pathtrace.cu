@@ -25,7 +25,7 @@
 
 constexpr bool
 	sortByMaterial = false,
-	stratifiedSplat = true,
+	stratifiedSplat = false,
 	cacheFirstBounce = false;
 
 
@@ -58,46 +58,6 @@ __host__ __device__ thrust::default_random_engine makeSeededRandomEngine(int ite
 	return thrust::default_random_engine(h);
 }
 
-//Kernel that writes the image to the OpenGL PBO directly.
-__global__ void sendImageToPBO(uchar4 *pbo, glm::ivec2 resolution, int iter, glm::vec3 *image) {
-	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-
-	if (x < resolution.x && y < resolution.y) {
-		int index = x + (y * resolution.x);
-		glm::vec3 raw = image[index] / static_cast<float>(iter);
-		glm::vec3 pix = glm::pow(raw, glm::vec3(1.0f / 2.2f));
-#if defined(CHECK_NAN) || defined(CHECK_NEGATIVE)
-		{
-			glm::vec3 newPix = glm::clamp(pix * 0.2f, 0.0f, 0.2f);
-#	ifdef CHECK_NAN
-			if (glm::any(glm::isnan(raw))) {
-				newPix.x = 1.0f;
-			}
-#	endif
-#	ifdef CHECK_INF
-			if (glm::any(glm::isinf(raw))) {
-				newPix.y = 1.0f;
-			}
-#	endif
-#	ifdef CHECK_NEGATIVE
-			if (glm::any(glm::lessThan(raw, glm::vec3(0.0f)))) {
-				newPix.z = 1.0f;
-			}
-#	endif
-			pix = newPix;
-		}
-#endif
-
-		glm::ivec3 color = glm::clamp(glm::ivec3(pix * 255.0f), 0, 255);
-		// Each thread writes one pixel location in the texture (textel)
-		pbo[index].w = 0;
-		pbo[index].x = color.x;
-		pbo[index].y = color.y;
-		pbo[index].z = color.z;
-	}
-}
-
 static Scene *hst_scene = nullptr;
 static glm::vec3 *dev_image = nullptr;
 static Geom *dev_geoms = nullptr;
@@ -108,7 +68,6 @@ static AABBTreeNode *dev_aabbTree = nullptr;
 static int aabbTreeRoot;
 
 // static variables for device memory, any extra info you need, etc
-
 static int *dev_materialSortBuffer = nullptr;
 static int *dev_materialSortBuffer2 = nullptr;
 
@@ -119,6 +78,10 @@ static int numStratifiedSamples;
 static float stratifiedSamplingRange;
 static IntersectionSample *dev_samplePool = nullptr;
 static CameraSample *dev_camSamplePool = nullptr;
+
+static glm::vec3 *dev_normalBuffer = nullptr;
+static glm::vec3 *dev_positionBuffer = nullptr;
+static glm::vec3 *dev_colorBuffer1 = nullptr, *dev_colorBuffer2 = nullptr;
 
 void pathtraceInit(Scene *scene, int sqrtNumStratifiedSamples) {
 	hst_scene = scene;
@@ -150,13 +113,17 @@ void pathtraceInit(Scene *scene, int sqrtNumStratifiedSamples) {
 
 	cudaMalloc(&dev_aabbTree, scene->aabbTree.size() * sizeof(AABBTreeNode));
 	cudaMemcpy(dev_aabbTree, scene->aabbTree.data(), scene->aabbTree.size() * sizeof(AABBTreeNode), cudaMemcpyHostToDevice);
+	aabbTreeRoot = scene->aabbTreeRoot;
 
 	stratifiedSamplingRange = 1.0f / sqrtNumStratifiedSamples;
 	numStratifiedSamples = sqrtNumStratifiedSamples * sqrtNumStratifiedSamples;
 	cudaMalloc(&dev_samplePool, scene->state.traceDepth * numStratifiedSamples * sizeof(IntersectionSample));
 	cudaMalloc(&dev_camSamplePool, numStratifiedSamples * sizeof(CameraSample));
 
-	aabbTreeRoot = scene->aabbTreeRoot;
+	cudaMalloc(&dev_normalBuffer, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_positionBuffer, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_colorBuffer1, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_colorBuffer2, pixelCount * sizeof(glm::vec3));
 
 	checkCUDAError("pathtraceInit");
 }
@@ -179,6 +146,11 @@ void pathtraceFree() {
 	cudaFree(dev_aabbTree);
 	cudaFree(dev_samplePool);
 	cudaFree(dev_camSamplePool);
+
+	cudaFree(dev_normalBuffer);
+	cudaFree(dev_positionBuffer);
+	cudaFree(dev_colorBuffer1);
+	cudaFree(dev_colorBuffer2);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -364,7 +336,7 @@ struct MaterialCompare {
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(uchar4 *pbo, int frame, int iter, int lightMis, int numLights) {
+void pathtrace(int frame, int iter, int lightMis, int numLights) {
 	const int traceDepth = hst_scene->state.traceDepth;
 	const Camera &cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -458,12 +430,6 @@ void pathtrace(uchar4 *pbo, int frame, int iter, int lightMis, int numLights) {
 			);
 			thrust::sort_by_key(thrust::device, dev_materialSortBuffer, dev_materialSortBuffer + numPaths, dev_intersections);
 			thrust::sort_by_key(thrust::device, dev_materialSortBuffer2, dev_materialSortBuffer2 + numPaths, dev_paths);
-
-			/*
-			thrust::sort_by_key(
-				thrust::device, dev_intersections, dev_intersections + numPaths, dev_paths, MaterialCompare()
-			);
-			*/
 		}
 
 		shade<<<numblocksPathSegmentTracing, blockSize1d>>>(
@@ -479,15 +445,6 @@ void pathtrace(uchar4 *pbo, int frame, int iter, int lightMis, int numLights) {
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
-
-	///////////////////////////////////////////////////////////////////////////
-
-	// Send results to OpenGL buffer for rendering
-	sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
-
-	// Retrieve image from GPU
-	cudaMemcpy(hst_scene->state.image.data(), dev_image,
-			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
 	checkCUDAError("pathtrace");
 }
@@ -505,4 +462,284 @@ void updateStratifiedSamples(
 	cudaMemcpy(
 		dev_camSamplePool, camSamples.data(), camSamples.size() * sizeof(CameraSample), cudaMemcpyHostToDevice
 	);
+}
+
+
+template <typename T> __host__ __device__ T &texelFetch(T *tex, int width, int height, int x, int y) {
+	// clamp
+	x = glm::clamp(x, 0, width - 1);
+	y = glm::clamp(y, 0, height - 1);
+	return tex[y * width + x];
+}
+
+__host__ __device__ glm::vec3 textureSampleBilinear(
+	const glm::vec3 *tex, int width, int height, float pixelX, float pixelY
+) {
+	pixelX -= 0.5f;
+	pixelY -= 0.5f;
+	int x = static_cast<int>(glm::floor(pixelX)), y = static_cast<int>(glm::floor(pixelY));
+	float fx = pixelX - static_cast<float>(x), fy = pixelY - static_cast<float>(y);
+
+	glm::vec3
+		p11 = texelFetch(tex, width, height, x, y), p12 = texelFetch(tex, width, height, x + 1, y),
+		p21 = texelFetch(tex, width, height, x, y + 1), p22 = texelFetch(tex, width, height, x + 1, y + 1);
+
+	return glm::mix(glm::mix(p11, p12, fx), glm::mix(p21, p22, fx), fy);
+}
+
+__global__ void aTrousIter(
+	const glm::vec3 *color, const glm::vec3 *normal, const glm::vec3 *position,
+	int width, int height, float stepSize,
+	float colorWeightSqr, float normalWeightSqr, float positionWeightSqr,
+	glm::vec3 *colorOut
+) {
+	int ix = threadIdx.x + blockIdx.x * blockDim.x;
+	int iy = threadIdx.y + blockIdx.y * blockDim.y;
+	if (ix >= width || iy >= height) {
+		return;
+	}
+	int pixelIndex = iy * width + ix;
+
+	float totalWeight = 0.0f;
+	glm::vec3 totalColor(0.0f);
+
+	glm::vec3
+		centerColor = color[pixelIndex],
+		centerNormal = normal[pixelIndex],
+		centerPosition = position[pixelIndex];
+
+	float centerX = ix + 0.5f, centerY = iy + 0.5f;
+	const float
+		offsets[5]{ -2.0f * stepSize, -1.0f * stepSize, 0.0f, 1.0f * stepSize, 2.0f * stepSize },
+		weights[5]{ 0.0625f, 0.25f, 0.375f, 0.25f, 0.0625f };
+#pragma unroll
+	for (int x = 0; x < 5; ++x) {
+#pragma unroll
+		for (int y = 0; y < 5; ++y) {
+			float curWeight = weights[x] * weights[y];
+			glm::vec3 curColor;
+			if (x == 2 && y == 2) {
+				curColor = centerColor;
+			} else {
+				float pixelX = centerX + offsets[x], pixelY = centerY + offsets[y];
+
+				curColor = textureSampleBilinear(color, width, height, pixelX, pixelY);
+				float colorExp = glm::length2(curColor - centerColor) / colorWeightSqr;
+
+				glm::vec3 curNormal = textureSampleBilinear(normal, width, height, pixelX, pixelY);
+				float normalExp = glm::length2(curNormal - centerNormal) / (normalWeightSqr * stepSize * stepSize);
+
+				glm::vec3 curPosition = textureSampleBilinear(position, width, height, pixelX, pixelY);
+				float positionExp = glm::length2(curPosition - centerPosition) / positionWeightSqr;
+
+				curWeight *= glm::exp(-(colorExp + normalExp + positionExp));
+			}
+			totalColor += curWeight * curColor;
+			totalWeight += curWeight;
+		}
+	}
+
+	colorOut[iy * width + ix] = totalColor / totalWeight;
+}
+
+__global__ void aTrousCopyBuffer(const glm::vec3 *accumBuf, glm::vec3 *target, int numPixels, int iter) {
+	int iSelf = threadIdx.x + blockIdx.x * blockDim.x;
+	if (iSelf >= numPixels) {
+		return;
+	}
+	target[iSelf] = accumBuf[iSelf] / static_cast<float>(iter);
+}
+
+__global__ void aTrousGenBuffers(
+	Camera cam, glm::vec3 *normal, glm::vec3 *position, int width, int height,
+	const Geom* geoms, const AABBTreeNode* aabbTree, int aabbTreeRoot
+) {
+	int ix = threadIdx.x + blockIdx.x * blockDim.x;
+	int iy = threadIdx.y + blockIdx.y * blockDim.y;
+	if (ix >= width || iy >= height) {
+		return;
+	}
+	int pixelIndex = iy * width + ix;
+
+	glm::vec3 dir =
+		cam.view -
+		cam.right * (cam.pixelLength.x * ((static_cast<float>(ix) - 0.5f) / cam.resolution.x - 0.5f)) -
+		cam.up * (cam.pixelLength.y * ((static_cast<float>(iy) - 0.5f) / cam.resolution.x - 0.5f));
+
+	glm::vec3 &norm = normal[pixelIndex], &pos = position[pixelIndex];
+
+	Ray ray;
+	ray.origin = cam.position;
+	ray.direction = dir;
+
+	float dist = FLT_MAX;
+	glm::vec3 normalToken;
+	int geomId = traverseAABBTree<false>(ray, aabbTree, aabbTreeRoot, geoms, -1, -1, &dist, &normalToken);
+	if (geomId != -1) {
+		glm::vec3 geomNorm, shadeNorm;
+		computeNormals(geoms[geomId], normalToken, &geomNorm, &shadeNorm);
+
+		pos = ray.origin + dist * ray.direction;
+		norm = shadeNorm;
+	} else {
+		pos = glm::vec3(0.0f);
+		norm = glm::vec3(0.0f);
+	}
+}
+
+void aTrous(int levels, float radius, int iter, float colorWeight, float normalWeight, float positionWeight) {
+	const Camera &cam = hst_scene->state.camera;
+
+	int numPixels = cam.resolution.x * cam.resolution.y;
+	int blockSize = 128;
+	int numBlocks = (numPixels + blockSize - 1) / blockSize;
+
+	dim3 blockSize2D(16, 16);
+	dim3 numBlocks2D(
+		(cam.resolution.x + blockSize2D.x - 1) / blockSize2D.x,
+		(cam.resolution.y + blockSize2D.y - 1) / blockSize2D.y
+	);
+
+	aTrousCopyBuffer<<<numBlocks, blockSize>>>(dev_image, dev_colorBuffer1, numPixels, iter);
+
+	aTrousGenBuffers<<<numBlocks2D, blockSize2D>>>(
+		hst_scene->state.camera, dev_normalBuffer, dev_positionBuffer,
+		cam.resolution.x, cam.resolution.y,
+		dev_geoms, dev_aabbTree, aabbTreeRoot
+	);
+
+	float stepSize = 0.5f * radius / glm::pow(2.0f, levels);
+	for (int i = 0; i < levels; ++i) {
+		aTrousIter<<<numBlocks2D, blockSize2D>>>(
+			dev_colorBuffer1, dev_normalBuffer, dev_positionBuffer,
+			cam.resolution.x, cam.resolution.y, stepSize,
+			colorWeight * colorWeight, normalWeight * normalWeight, positionWeight * positionWeight,
+			dev_colorBuffer2
+		);
+
+		stepSize *= 2.0f;
+		std::swap(dev_colorBuffer1, dev_colorBuffer2);
+	}
+}
+
+
+__host__ __device__ glm::vec3 processTexel(glm::vec3 pix, BufferType bufType, int iter) {
+	switch (bufType) {
+	case BufferType::AccumulatedColor:
+		{
+			glm::vec3 raw = pix / static_cast<float>(iter);
+			pix = glm::pow(raw, glm::vec3(1.0f / 2.2f));
+#if defined(CHECK_NAN) || defined(CHECK_NEGATIVE)
+			{
+				glm::vec3 newPix = glm::clamp(pix * 0.2f, 0.0f, 0.2f);
+#	ifdef CHECK_NAN
+				if (glm::any(glm::isnan(raw))) {
+					newPix.x = 1.0f;
+				}
+#	endif
+#	ifdef CHECK_INF
+				if (glm::any(glm::isinf(raw))) {
+					newPix.y = 1.0f;
+				}
+#	endif
+#	ifdef CHECK_NEGATIVE
+				if (glm::any(glm::lessThan(raw, glm::vec3(0.0f)))) {
+					newPix.z = 1.0f;
+				}
+#	endif
+				pix = newPix;
+			}
+#endif
+		}
+		break;
+	case BufferType::Normal:
+		pix = (pix + 1.0f) * 0.5f;
+		break;
+	case BufferType::Position:
+		{
+			float scale = 30.0f;
+			pix = (pix + 0.5f * scale) / scale;
+		}
+		break;
+	case BufferType::FilteredColor:
+		pix = glm::pow(pix, glm::vec3(1.0f / 2.2f));
+		break;
+	}
+	return pix;
+}
+
+__global__ void sendImageToPBO(
+	uchar4 *pbo, const glm::vec3 *image, glm::ivec2 resolution, int iter, BufferType bufType
+) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 pix = image[index];
+		pix = processTexel(pix, bufType, iter);
+		glm::ivec3 color = glm::clamp(glm::ivec3(pix * 255.0f), 0, 255);
+		pbo[index].w = 0;
+		pbo[index].x = color.x;
+		pbo[index].y = color.y;
+		pbo[index].z = color.z;
+	}
+}
+
+__global__ void processImage(
+	glm::vec3 *out, const glm::vec3 *in, glm::ivec2 resolution, int iter, BufferType bufType
+) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		out[index] = processTexel(in[index], bufType, iter);
+	}
+}
+
+const glm::vec3 *getBuffer(BufferType buf) {
+	switch (buf) {
+	case BufferType::AccumulatedColor:
+		return dev_image;
+	case BufferType::Normal:
+		return dev_normalBuffer;
+	case BufferType::Position:
+		return dev_positionBuffer;
+	case BufferType::FilteredColor:
+		return dev_colorBuffer1;
+	}
+	return nullptr;
+}
+
+void sendBufferToPbo(uchar4 *pbo, BufferType buf, int iter) {
+	const Camera &cam = hst_scene->state.camera;
+	const glm::vec3 *img = getBuffer(buf);
+
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, img, cam.resolution, iter, buf);
+}
+
+void saveBufferState(BufferType buf, int iter) {
+	const Camera &cam = hst_scene->state.camera;
+	const glm::vec3 *img = getBuffer(buf);
+
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	glm::vec3 *tmpBuffer;
+	cudaMalloc(&tmpBuffer, cam.resolution.x * cam.resolution.y * sizeof(glm::vec3));
+	processImage<<<blocksPerGrid2d, blockSize2d>>>(tmpBuffer, img, cam.resolution, iter, buf);
+	cudaMemcpy(
+		hst_scene->state.image.data(), tmpBuffer,
+		cam.resolution.x * cam.resolution.y * sizeof(glm::vec3),
+		cudaMemcpyDeviceToHost
+	);
+	cudaFree(tmpBuffer);
 }

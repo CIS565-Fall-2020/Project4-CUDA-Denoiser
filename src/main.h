@@ -32,7 +32,19 @@ extern int iteration;
 extern int width;
 extern int height;
 
+extern int ui_previewBuffer;
+extern bool ui_pauseRendering;
+extern int ui_limitSamples;
+
+extern int ui_filterSize;
+extern float ui_colorWeight;
+extern float ui_normalWeight;
+extern float ui_positionWeight;
+
 void runCuda();
+void restartRendering();
+void saveImage(BufferType type);
+
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);

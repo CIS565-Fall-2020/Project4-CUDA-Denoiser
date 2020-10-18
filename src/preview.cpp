@@ -3,6 +3,11 @@
 #include "main.h"
 #include "preview.h"
 
+#define IMGUI_IMPL_OPENGL_LOADER_GLEW
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_glfw.h"
+#include "../imgui/imgui_impl_opengl3.h"
+
 GLuint positionLocation = 0;
 GLuint texcoordsLocation = 1;
 GLuint pbo;
@@ -165,7 +170,70 @@ bool init() {
     glUseProgram(passthroughProgram);
     glActiveTexture(GL_TEXTURE0);
 
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    //// Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer bindings
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+
     return true;
+}
+
+static ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None | ImGuiWindowFlags_NoMove;
+static bool ui_hide = false;
+
+void drawGui(int windowWidth, int windowHeight) {
+    // Dear imgui new frame
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // Dear imgui define
+    ImVec2 minSize(300.f, 300.f);
+    ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.5);
+    ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
+
+    ImGui::SetNextWindowPos(ui_hide ? ImVec2(-1000.f, -1000.f) : ImVec2(0.0f, 0.0f));
+
+    ImGui::Begin("Control Panel", 0, windowFlags);
+    ImGui::SetWindowFontScale(1);
+
+    ImGui::Text("press H to hide GUI completely.");
+    if (ImGui::IsKeyPressed('H')) {
+        ui_hide = !ui_hide;
+    }
+
+    ImGui::Checkbox("Pause Rendering", &ui_pauseRendering);
+    if (ImGui::Button("Restart Rendering")) {
+        restartRendering();
+    }
+    ImGui::SliderInt("Limit Samples", &ui_limitSamples, 0, 100);
+
+	{
+		const char *previewItems[] = { "Accumulated Color", "World Normal", "World Position", "Filtered Color" };
+		ImGui::Combo("Visualize Buffer", &ui_previewBuffer, previewItems, IM_ARRAYSIZE(previewItems));
+	}
+    if (ImGui::Button("Save Image")) {
+        saveImage(static_cast<BufferType>(ui_previewBuffer));
+    }
+
+    ImGui::Separator();
+
+    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.001f, 3.0f);
+
+    ImGui::End();
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void mainLoop() {
@@ -183,6 +251,12 @@ void mainLoop() {
 
         // VAO, shader program, and texture already bound
         glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
+
+        // Draw imgui
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        drawGui(display_w, display_h);
+
         glfwSwapBuffers(window);
     }
     glfwDestroyWindow(window);
