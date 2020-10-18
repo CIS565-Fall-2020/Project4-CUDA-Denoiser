@@ -25,6 +25,7 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 int ui_filterSize = 5;
+int lastFilterSize = 5;
 int ui_filterIterations = 3;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
@@ -126,7 +127,10 @@ void runCuda() {
       lastLoopIterations = ui_iterations;
       camchanged = true;
     }
-
+	if (lastFilterSize != ui_filterSize) {
+		lastFilterSize = ui_filterSize;
+		camchanged = true;
+	}
     if (camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;

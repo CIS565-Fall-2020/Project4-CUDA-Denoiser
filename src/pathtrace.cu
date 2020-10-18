@@ -367,12 +367,12 @@ __global__ void kernATrous(
 				if (rx < 0 || rx >= cam.resolution.x || ry < 0 || ry >= cam.resolution.y) {
 					continue;
 				}
-				float gaussian = exp(-(i * i + j * j) / 2.f);
+				float gaussian = exp(-(i * i + j * j) * stepwidth * stepwidth / 2.f);
 				int r_idx = rx + ry * cam.resolution.x;
 
-				float w_rt = exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_rt);
-				float w_n = exp(-glm::length(normal - gBuffer[r_idx].nor) / var_n);
-				float w_p = exp(-glm::length(position - gBuffer[r_idx].pos) / var_x);
+				float w_rt = min(1.f, exp(-glm::length(pathSegments[idx].color - pathSegments[r_idx].color) / var_rt));
+				float w_n = min(1.f, exp(-glm::length(normal - gBuffer[r_idx].nor) / var_n));
+				float w_p = min(1.f, exp(-glm::length(position - gBuffer[r_idx].pos) / var_x));
 
 				float w = gaussian * w_rt * w_n * w_p;
 				norm_factor += w;
