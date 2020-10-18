@@ -1,7 +1,7 @@
-CUDA Path Tracer
+CUDA Pathtracing Denoiser
 ================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Jilin Liu
   * [LinkedIn](https://www.linkedin.com/in/jilin-liu-61b273192/), [twitter](https://twitter.com/Jilin18043110).
@@ -9,69 +9,53 @@ CUDA Path Tracer
 
 ## Features and Results
 
-This is a GPU-based Monte Carlo path tracer implemented in C++ and CUDA. Below are some rendering examples.
+This is a GPU-based Denoiser for Monte Carlo path-traced images implemented in C++ and CUDA. 
+Denoisers can help produce a smoother appearance in a pathtraced image with fewer samples-per-pixel/iterations.
 
-![](./img/halloween.png)
+![](./img/compareDenoise.JPG)
 
-![](./img/demo1.gif)
-
-![](./img/glass.png)
-
-The image below is showcasing a bug that I encountered when implementing the refraction. To avoid numerical error I just offsetted the intersection point a little bit over the surface, but resulting in some rays never entering the sphere.
-
-![](./img/Sophon.png)
+The technique is based on "Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering," by Dammertz, Sewtz, Hanika, and Lensch. You can find the paper here: https://jo.dreggn.org/home/2010_atrous.pdf. The raytracing part is based on [this repo](https://github.com/Songsong97/Project3-CUDA-Path-Tracer).
 
 Features:
-1. A shading kernel with BSDF evaluation for diffuse material and perfect specular reflection material.
-2. Path continuation/termination using Stream Compaction.
-3. Sorting pathSegments based on material types to make the same material contiguous in memory. 
-4. A cache for the first bounce intersections for re-use across all subsequent iterations.
-5. Refraction with Fresnel effects.
-6. Stochastic sampled antialiasing. (Does not work with first cache.)
-7. Mesh loading and rendering with Hierarchical Spatial Data Structure(see below).
-8. Octree culling of the entire scene.
-9. Hemisphere sampling using Sobol sequence.
+1. Basic denoiser for Monte-Carlo ray-traced images.
+2. Preserve sharp edges for rendered image by using G-Buffer.
 
 ## Performance Analysis
 
-### Sorting pathSegments based on material types
+### Timing
+The denoiser adds a constant overhead to get the final result.
 
-To avoid divergence of threads when processing different materials, we would like the same material to be contiguous in memory. However, after sorting the path segments, the algorithm runs actually much slower for Cornell Box. The reason is that this scene does not contain many different types of materials and sorting is very expensive. A much wiser implementation would be required to achieve better performance.
+| Scene | ray tracing (one sample iteration) | denoising |
+|---|---|---|
+| [Cornell Box](./img/non.png) | 18ms | 58ms |
+| [Halloween](./img/halloween.png) | 944ms | 58ms |
 
-![](./img/materialSort.JPG)
+Since we denoise the image only once, the time is generally much shorter than what the ray-tracing stage takes. This makes sense because the key point for denoiser is to reduce the number of samples for rendering. Further optimization could be made to the denoiser to achieve real-time performance.
 
-### Cache first bounce intersections for re-use
+### Number of iterations
+About 5 to 8 iterations are needed to get an acceptably smooth result. Sometimes it is necessary to increase the number of iterations to get rid of artifacts on edges. For example, when we only sample 5 rays per pixel, there will be visible strange lines in the corner.
 
-This idea is good, especially when our camera is still and want to get more iterations of path tracing. But the performance gain is still limited for Cornell Box. The reason is that there are merely few objects in the scene, thus doing a intersection check would not cost much, especially for a GPU implementation. This should be much more helpful when we add more objects or meshes to the scene.
+![](./img/artifact.JPG)
 
-![](./img/cacheFirst.JPG)
+This artifact will be smoothed if we sample 7 rays per pixel or more.
 
-### Stochastic sampled antialiasing
+![](./img/c7.png)
 
-![](./img/antialiasing.png)
+### Execution time at different resolutions
+The denoiser's execution time is proportional to the image resolution, which is expected as the theoretical complexity is O(pixelCount).
 
-When applying antialiasing, the ray direction from camera is jittered along stratified sub-pixels in each iteration. This implementation is actually not mathematically correct, when the iteration number is not a multiplication of the sub-pixels, but the error is propotional to the reciprocal of the iteration number. The advantage is that we do not need to synchronize the rays of the same pixel because their execution is serialized in time.
+| 800 * 800 | 1600 * 1600 |
+|---|---|
+| 58ms | 233ms |
 
-### Sobol sequence
+### Denoise with different material types
+The denoiser is unaware of any material types in the scene. So many different types of material only affect ray tracing part but do not affect denoising part. As mentioned before, the algorithm is only bounded by the pixel number.
 
-Sobol sequence is a low discrepency sequence generated using some direction vectors. I used the same vectors as those in Unreal Engine. The result is pretty "random" and it is distributed more uniformly in space.
+### Limitation
+When denoising Cornell Box with smaller area light, it works much worse than brighter scenes. The authors of the paper used HDR for their environment, so it might be easier for them to preserve the color of the scene. When the scene is under sampled, the denoiser typically gives us a result that looks dark and stained.
 
-![](./img/sobolSamples.png)
+![](./img/cornellDenoised.png)
 
-Sobol sequence can to some extent make the ray tracing process converge faster. However, it is prone to some structural artifacts in the rendered image, as you can see below.
+It is also tricky to tune parameters for the Gaussian kernel.
 
-![](./img/SobolSequence.png)
-
-### Mesh loading with glTF and rendering using octree.
-
-I used [tinygltf](https://github.com/syoyo/tinygltf/) to parse a glTF mesh model. I only utilized the position data of the triangles. Normals and UV coordinates will be added in the future.
-
-As you can see below, I implemented an octree to accelerate the ray intersection test. The implementation may be a little different from a standard octree. To insert a geometry into the octree, we recursively check which child node does this geometry belong to and place it at the level where the entire bounding box of that geometry could be covered. This means there will be triangles stored in the intermediate node and the tree will just grow adaptively. This is a good property when there are many large triangles that span a large space of scene and effectively avoids intersection checking with many leaf node.
-
-![](./img/octree1.png)
-
-The performance gain using octree is rewarding. When there are about 15K or more triangles in the scene, using an octree becomes faster than a brute force method. And as the number of triangles doubles, the rendering time of brute force method increase linearly, while the rendering time using octree increases much slower.
-
-![](./img/octree2.png)
-
-Even the theoretical complexity of octree-accelerated ray intersection is logarithmic, my implementation has a large coefficient. It is slower than brute force method when there are only limited number of geometries in the scene. The reason is that ray segment intersections could be very different from each other, leading to huge warp divergence. One possible way to do this more efficiently is to break the intersection checking to smaller stages, for example, check one node of octree at a time. When a ray ends up hitting nothing, it could be removed early using stream compaction, just like what we did for one single iteration. Reducing granularity could reduce warp divergence.
+The author mentioned in the paper that, for highly complex scenes, the algorithm is problematic since low number of samples no longer suffice to capture the necessary information.
