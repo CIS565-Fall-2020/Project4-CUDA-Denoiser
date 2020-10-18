@@ -32,7 +32,7 @@ bool ui_saveAndExit = false;
 
 // Jack12 add
 int ui_showIdx = 0;
-int ui_denoiseIteration = 1;
+int ui_denoiseIteration = 5;
 
 const const char* ui_showItem[] = {
     "Image", 
@@ -185,6 +185,7 @@ void runCuda(PerformanceTimer& m_timer) {
         cameraPosition += cam.lookAt;
         cam.position = cameraPosition;
         camchanged = false;
+        out_flag = false;
       }
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU

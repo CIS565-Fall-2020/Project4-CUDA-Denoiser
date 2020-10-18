@@ -209,3 +209,4 @@ References
 * [Spatiotemporal Variance-Guided Filtering](https://research.nvidia.com/publication/2017-07_Spatiotemporal-Variance-Guided-Filtering%3A)
 * [A Survey of Efficient Representations for Independent Unit Vectors](http://jcgt.org/published/0003/02/01/paper.pdf)
 * ocornut/imgui - https://github.com/ocornut/imgui
+* [jmarcap](https://github.com/jmarcao/CUDA-Path-Tracer/tree/master/scenes) from CIS 565 last year, the scene is bought from his project 3.

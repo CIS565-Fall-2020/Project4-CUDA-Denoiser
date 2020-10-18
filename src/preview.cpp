@@ -60,7 +60,16 @@ void save_img_from_frame(
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename << "." << show_item << "." << startTimeString << "." << samples << "samp";
+    ss << filename << "." << show_item << "." << startTimeString << "." << samples << "samp"
+        ;
+    if (ui_denoise) {
+        ss << "." << "W_col_" << ui_colorWeight
+            << "." << "W_norm_" << ui_normalWeight
+            << "." << "W_pos_" << ui_positionWeight;
+    }
+    else {
+        ss << "." << "Noised";
+    }
     filename = ss.str();
 
     // CHECKITOUT
