@@ -352,8 +352,8 @@ __global__ void generateGBuffer(
 		ShadeableIntersection si = shadeableIntersections[idx];
 		PathSegment ps = pathSegments[idx];
 		gBuffer[ps.pixelIndex].t = si.t;
-		gBuffer[ps.pixelIndex].c += ps.color;
-		// gBuffer[ps.pixelIndex].c = ps.color;
+		// gBuffer[ps.pixelIndex].c += ps.color;
+		gBuffer[ps.pixelIndex].c = ps.color;
 		gBuffer[ps.pixelIndex].n = si.surfaceNormal;
 		gBuffer[ps.pixelIndex].p = ps.ray.direction * si.t;
 		//gBuffer[idx].t = si.t;
@@ -371,11 +371,11 @@ __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image,
 	if (idx < nPaths)
 	{
 		PathSegment iterationPath = iterationPaths[idx];
-		gBuffer[iterationPath.pixelIndex].c += iterationPath.color;
-		image[iterationPath.pixelIndex] = gBuffer[iterationPath.pixelIndex].c;
+		gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
+		//image[iterationPath.pixelIndex] = gBuffer[iterationPath.pixelIndex].c;
 
 		//PathSegment iterationPath = iterationPaths[idx];
-		//image[iterationPath.pixelIndex] += iterationPath.color;
+		image[iterationPath.pixelIndex] += iterationPath.color;
 	}
 }
 
@@ -410,22 +410,24 @@ __global__ void denoise(glm::ivec2 resolution,
 		float p_phi = 1.f;
 
 		glm::vec3 cval = image[idx];
+
 		glm::vec3 sum = glm::vec3(0.f);
 		GBufferPixel GBPix = gBuffer[idx];
 
 		float cum_w = 0.f;
 		for (int i = 0; i < kernelWidth; i++) {
-			glm::ivec2 idx2 = offset[i] * stepWidth + glm::ivec2(x, y);
+			glm::ivec2 idx2 = (offset[i] * stepWidth) + glm::ivec2(x, y);
 			idx2 = glm::clamp(idx2, glm::ivec2(0), resolution - 1);		// clamp the index of the sampling pixel
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
+			glm::vec3 ctmp = image[idx2.x + (idx2.y * resolution.x)];
 
-			glm::vec3 t = cval - GBPix2.c;
+			glm::vec3 t = cval - ctmp;
 			float dist2 = glm::dot(t, t);
-			float c_w = min(exp(-dist2/c_phi), 1.f);
+			float c_w = min(exp(-dist2 / c_phi), 1.f);
 
 			t = GBPix.n - GBPix2.n;
-			dist2 = max(glm::dot(t, t) / 1.f, 0.f);
+			dist2 = max(glm::dot(t, t) / (stepWidth * stepWidth), 0.f);
 			float n_w = min(exp(-dist2 / n_phi), 1.f);
 
 			t = GBPix.p - GBPix2.p;
@@ -433,12 +435,12 @@ __global__ void denoise(glm::ivec2 resolution,
 			float p_w = min(exp(-dist2 / p_phi), 1.f);
 
 			float weight = c_w * n_w * p_w;
-			sum += GBPix2.c * weight * kernel[i];
+			sum += ctmp * weight * kernel[i];
 			cum_w += weight * kernel[i];
 		}
 
 		image[idx] = sum / cum_w;
-		image[idx] = cval;
+		// image[idx] = cval;
 	}
 }
 
@@ -508,7 +510,7 @@ void pathtrace(int frame, int iter) {
 	// Shoot ray into scene, bounce between objects, push shading chunks
 
 	// Empty gbuffer
-	//cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
 	// clean shading chunks
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -562,11 +564,11 @@ void pathtrace(int frame, int iter) {
 	checkCUDAError("finalGather");
 
 	// call denoise here (2-D)
-	/*for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
+	for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
 		std::cout << stepWidth << std::endl;
 		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
 		checkCUDAError("denoise");
-	}*/
+	}
 
 	///////////////////////////////////////////////////////////////////////////
 
