@@ -54,7 +54,7 @@ For Cornell Box scene, I find the best match is with weight `color: 0.65`,`norma
 
 
 
-Here shows the runtime for each scene
+Here we show the runtime for each scene
 
 | milliseconds | 5 steps A-trous Denoise | No denoise |
 | ------------ | ----------------------- | ---------- |
@@ -62,7 +62,7 @@ Here shows the runtime for each scene
 | Fresnel      | 1050.5                  | 954.842    |
 | Teaser       | 1109.1                  | 960.42     |
 
-Since the algorithm is **O(N)** for **N** pixel, the 
+Since the algorithm is **O(N)** for **N** pixel, the denoiser takes more time as the solution increases.
 
 From the results and the paper we could find out that if the scenes become more complicated, the materials turn more diverse, the denoised results would go worse because the algorithm is influenced by the variance from normal, color and positions. 
 
