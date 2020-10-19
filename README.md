@@ -86,7 +86,23 @@ Also for better saving, instead of saving by parsing the host image pointer, her
 
 ##### Gbuffer optimization:
 
+**oct-encoding normal** : Here we implement the normal encoding method mentioned in [paper](http://jcgt.org/published/0003/02/01/paper.pdf): A survey of Efficient Representations for Independent Unit Vectors.
 
+It basically map 3d vectors(assume normalized) into 2d in memory by mapping the octants of a sphere to the faces of an octahedron.
+
+![oct_encode](img/oct_encode.png)
+
+
+
+Here shows the performance for oct encode in denoising
+
+| milliseconds | no encode | oct encode |
+| ------------ | --------- | ---------- |
+| Cornell Box  | 330.6     | 410.8      |
+
+The table shows that although oct encoding could save memory bandwidth for G-buffer, it could cause more overhead since every time we fetch the normal from G-buffer, we need to decode the oct representation.
+
+**Things to mention:** The algorithm showed in [paper](http://jcgt.org/published/0003/02/01/paper.pdf) might cause divided by zero. So be sure to add an small number at the denominator.
 
 ### Acknowledge
 
