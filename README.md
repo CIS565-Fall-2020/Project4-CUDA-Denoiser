@@ -40,3 +40,6 @@ Interestingly, in situations where the light source is smaller we can see artifa
 
 <img src="renders/raw_smallLight.png" width="300"> <img src="renders/denoise_smallLight.png" width="300">
 
+We can also visualize the effects of the kernel size. We can see that if the kernel is smaller we get less, more local smoothing. Conversely, if we increase the kernel size we get more smoothing reaching over larger regions of the image. From left to right here, we see filters of size 5/20/80 pixels. Each filter is square in shape and these sizes were picked because the À-Trous algorithm enables filters of side length 5 * 2^N.
+
+<img src="renders/filter5.png" width="200"> <img src="renders/filter20.png" width="200"> <img src="renders/filter80.png" width="200">
