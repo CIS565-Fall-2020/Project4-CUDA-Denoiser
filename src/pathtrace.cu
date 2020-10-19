@@ -13,8 +13,11 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "device_launch_parameters.h"
 
 #define ERRORCHECK 1
+#define visualizePositions false
+#define useBufferWeights true
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -73,12 +76,22 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        float timeToIntersect = gBuffer[index].t * 256.0;
+        
+        glm::vec3 buf;
+        float scale;
+        if (visualizePositions) {
+            buf = gBuffer[index].position;
+            scale = 25.f;
+        }
+        else {
+            buf = gBuffer[index].normal;
+            scale = 255.f;
+        }
 
         pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+        pbo[index].x = glm::clamp((int) glm::abs(buf[0] * scale), 0, 255);
+        pbo[index].y = glm::clamp((int) glm::abs(buf[1] * scale), 0, 255);
+        pbo[index].z = glm::clamp((int) glm::abs(buf[2] * scale), 0, 255);
     }
 }
 
@@ -91,6 +104,8 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static glm::vec3* dev_filter_buffer = NULL;
+
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -114,6 +129,7 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+    cudaMalloc(&dev_filter_buffer, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -126,6 +142,7 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
+    cudaFree(dev_filter_buffer);
 
     checkCUDAError("pathtraceFree");
 }
@@ -281,7 +298,15 @@ __global__ void generateGBuffer (
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+      float t = shadeableIntersections[idx].t;
+      if (t < 0.f) {
+          gBuffer[idx].position = glm::vec3(0,0,0);
+          gBuffer[idx].normal = glm::vec3(0,0,0);
+      }
+      else {
+          gBuffer[idx].position = pathSegments[idx].ray.origin + (pathSegments[idx].ray.direction * shadeableIntersections[idx].t);
+          gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+      }
   }
 }
 
@@ -291,7 +316,7 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (index < nPaths)
-	{
+	{   
 		PathSegment iterationPath = iterationPaths[index];
 		image[iterationPath.pixelIndex] += iterationPath.color;
 	}
@@ -430,4 +455,104 @@ const Camera &cam = hst_scene->state.camera;
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+}
+
+__global__ void unweightedAtrous(int stepSize, glm::ivec2 resolution, glm::vec3* inBuffer, glm::vec3* outBuffer) {
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+    if (x >= resolution.x || y >= resolution.y) return;
+
+    float kernel[5]{ 1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f / 4.f, 1.f / 16.f };
+    glm::vec3 result{ 0,0,0 };
+    for (int i = -2; i <= 2; i++) {
+        int new_x = x + i * stepSize;
+        if (new_x < 0) continue;
+        if (new_x >= resolution.x) break;
+
+        for (int j = -1; j <= 2; j++) {
+            int new_y = y + j * stepSize;
+            if (new_y < 0) continue;
+            if (new_y >= resolution.y) break;
+            int newIdx = new_x + (new_y * resolution.x);
+
+            result += kernel[i+2] * kernel[j+2] * inBuffer[newIdx];
+        }
+    }
+
+    outBuffer[x + (y * resolution.x)] = result;
+}
+
+__device__ float computeWeight(glm::vec3 p, glm::vec3 q, float weight) {
+    return glm::exp( -1.f * glm::length(p - q) / weight);
+}
+
+__global__ void weightedAtrous(int stepSize, glm::ivec2 resolution, 
+                               float colorWeight, float normalWeight, float positionWeight,
+                               GBufferPixel* gBuffer, glm::vec3* inBuffer, glm::vec3* outBuffer) {
+
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+    if (x >= resolution.x || y >= resolution.y) return;
+    int index = x + (y * resolution.x);
+    glm::vec3 centerPosition = gBuffer[index].position;
+    glm::vec3 centerNormal = gBuffer[index].normal;
+    glm::vec3 centerColor = inBuffer[index];
+
+    float kernel[5]{ 1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f / 4.f, 1.f / 16.f };
+    glm::vec3 result{ 0,0,0 };
+    float finalScale = 0;
+    for (int i = -2; i <= 2; i++) {
+        int new_x = x + i * stepSize;
+        if (new_x < 0) continue;
+        if (new_x >= resolution.x) break;
+
+        for (int j = -1; j <= 2; j++) {
+            int new_y = y + j * stepSize;
+            if (new_y < 0) continue;
+            if (new_y >= resolution.y) break;
+            int newIdx = new_x + (new_y * resolution.x);
+            float w = computeWeight(centerPosition, gBuffer[newIdx].position, positionWeight) +
+                computeWeight(centerNormal, gBuffer[newIdx].normal, normalWeight) +
+                computeWeight(centerColor, inBuffer[newIdx], colorWeight) * kernel[i + 2] * kernel[j + 2];
+            
+            finalScale += w;    
+            result += w * inBuffer[newIdx];
+        }
+    }
+
+    outBuffer[index] = result / finalScale;
+}
+
+void denoise(int filterSize, float colorWeight, float normalWeight, float positionWeight) {
+
+    if (filterSize < 5 || colorWeight == 0 || normalWeight == 0 || positionWeight == 0) return;
+    int iterations = std::log2(filterSize / 5) + 1;
+
+    const Camera& cam = hst_scene->state.camera;
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d(
+        (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+        (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+    
+    glm::ivec2 resolution = cam.resolution;
+    for (int i = 0; i < iterations; i++) {
+        int stepSize = std::pow(2, i);
+        if (useBufferWeights) {
+            weightedAtrous<<<blocksPerGrid2d, blockSize2d >>>(stepSize, resolution, 
+                                                              colorWeight, normalWeight, positionWeight, 
+                                                              dev_gBuffer, dev_image, dev_filter_buffer);
+        }
+        else {
+            unweightedAtrous<<<blocksPerGrid2d, blockSize2d >>>(stepSize, resolution, dev_image, dev_filter_buffer);
+        }
+
+        glm::vec3* tmp = dev_image;
+        dev_image = dev_filter_buffer;
+        dev_filter_buffer = tmp;
+    }
+
+    const int pixelcount = cam.resolution.x * cam.resolution.y;
+    cudaMemcpy(hst_scene->state.image.data(), dev_image,
+        pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }

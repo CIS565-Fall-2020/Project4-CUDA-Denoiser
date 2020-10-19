@@ -165,6 +165,11 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
+    if (ui_denoise && iteration == ui_iterations) {
+        iteration++;
+        denoise(ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight);
+    }
+
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     } else {

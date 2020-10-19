@@ -210,7 +210,7 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    ImGui::SliderInt("Iterations", &ui_iterations, 1, 50);
 
     ImGui::Checkbox("Denoise", &ui_denoise);
 
