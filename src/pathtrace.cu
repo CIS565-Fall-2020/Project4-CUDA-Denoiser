@@ -363,6 +363,18 @@ __global__ void generateGBuffer(
 	}
 }
 
+
+__global__ void colorGather(int pixelcount, GBufferPixel* gBuffer, PathSegment* iterationPaths)
+{
+	int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	if (idx < pixelcount)
+	{
+		PathSegment iterationPath = iterationPaths[idx];
+		gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
+	}
+}
+
 // Add the current iteration's output to the overall image
 __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image, PathSegment* iterationPaths)
 {
@@ -371,11 +383,11 @@ __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image,
 	if (idx < nPaths)
 	{
 		PathSegment iterationPath = iterationPaths[idx];
-		gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
+		// gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
 		//image[iterationPath.pixelIndex] = gBuffer[iterationPath.pixelIndex].c;
 
-		//PathSegment iterationPath = iterationPaths[idx];
-		image[iterationPath.pixelIndex] += iterationPath.color;
+		// image[iterationPath.pixelIndex] += iterationPath.color;
+		image[idx] += gBuffer[idx].c;
 	}
 }
 
@@ -409,7 +421,8 @@ __global__ void denoise(glm::ivec2 resolution,
 		float n_phi = 1.f;
 		float p_phi = 1.f;
 
-		glm::vec3 cval = image[idx];
+		// glm::vec3 cval = image[idx];
+		glm::vec3 cval = gBuffer[idx].c;
 
 		glm::vec3 sum = glm::vec3(0.f);
 		GBufferPixel GBPix = gBuffer[idx];
@@ -417,10 +430,11 @@ __global__ void denoise(glm::ivec2 resolution,
 		float cum_w = 0.f;
 		for (int i = 0; i < kernelWidth; i++) {
 			glm::ivec2 idx2 = (offset[i] * 1) + glm::ivec2(x, y);
-			idx2 = glm::clamp(idx2, glm::ivec2(0), resolution - 1);		// clamp the index of the sampling pixel
+			idx2 = glm::clamp(idx2, glm::ivec2(0), resolution - 1);
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
-			glm::vec3 ctmp = image[idx2.x + (idx2.y * resolution.x)];
+			// glm::vec3 ctmp = image[idx2.x + (idx2.y * resolution.x)];
+			glm::vec3 ctmp = GBPix2.c;
 
 			glm::vec3 t = cval - ctmp;
 			float dist2 = glm::dot(t, t);
@@ -439,7 +453,8 @@ __global__ void denoise(glm::ivec2 resolution,
 			cum_w += weight * kernel[i];
 		}
 
-		image[idx] = sum / cum_w;
+		gBuffer[idx].c = sum / cum_w;
+		// image[idx] = sum / cum_w;
 		// image[idx] = cval;
 	}
 }
@@ -559,9 +574,9 @@ void pathtrace(int frame, int iter) {
 
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_image, dev_paths);
+	colorGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_gBuffer, dev_paths);
 
-	checkCUDAError("finalGather");
+	checkCUDAError("colorGather");
 
 	// call denoise here (2-D)
 	for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
@@ -569,6 +584,10 @@ void pathtrace(int frame, int iter) {
 		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
 		checkCUDAError("denoise");
 	}
+
+	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_image, dev_paths);
+
+	checkCUDAError("finalGather");
 
 	///////////////////////////////////////////////////////////////////////////
 
