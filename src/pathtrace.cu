@@ -416,7 +416,7 @@ __global__ void denoise(glm::ivec2 resolution,
 
 		float cum_w = 0.f;
 		for (int i = 0; i < kernelWidth; i++) {
-			glm::ivec2 idx2 = (offset[i] * stepWidth) + glm::ivec2(x, y);
+			glm::ivec2 idx2 = (offset[i] * 1) + glm::ivec2(x, y);
 			idx2 = glm::clamp(idx2, glm::ivec2(0), resolution - 1);		// clamp the index of the sampling pixel
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];

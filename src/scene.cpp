@@ -111,7 +111,6 @@ int Scene::loadCamera() {
             state.traceDepth = atoi(tokens[1].c_str());
         } else if (strcmp(tokens[0].c_str(), "FILE") == 0) {
             state.imageName = tokens[1];
-            state.bufferImageName = tokens[1];
         }
     }
 

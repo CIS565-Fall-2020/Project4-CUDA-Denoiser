@@ -58,7 +58,6 @@ struct RenderState {
     std::vector<glm::vec3> image;
     std::vector<glm::vec3> bufferImage;
     std::string imageName;
-    std::string bufferImageName;
 };
 
 struct PathSegment {

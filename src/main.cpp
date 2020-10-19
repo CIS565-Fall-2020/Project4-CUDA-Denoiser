@@ -6,7 +6,7 @@
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
 
-static std::string startTimeString;
+// static std::string startTimeString;
 
 // For camera controls
 static bool leftMousePressed = false;
@@ -50,7 +50,6 @@ int height;
 //-------------------------------
 
 int main(int argc, char** argv) {
-    startTimeString = currentTimeString();
 
     if (argc < 2) {
         printf("Usage: %s SCENEFILE.txt\n", argv[0]);
@@ -117,7 +116,7 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
+    ss << filename << "." << currentTimeString() << "." << samples << "samp";
     filename = ss.str();
 
     // CHECKITOUT
