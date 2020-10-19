@@ -12,6 +12,22 @@ static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
 
+// DENOISER: simple UI parameters.
+// Search for any of these across the whole project to see how these are used,
+// or look at the diff for commit 1178307347e32da064dce1ef4c217ce0ca6153a8.
+// For all the gory GUI details, look at commit 5feb60366e03687bfc245579523402221950c9c5.
+int useDenoiserUI = 1;
+int ui_iterations = 0;
+int startupIterations = 0;
+int lastLoopIterations = 0;
+bool ui_showGbuffer = false;
+bool ui_denoise = false;
+int ui_filterSize = 40;
+float ui_colorWeight = 3.814f;
+float ui_normalWeight = 1.134f;
+float ui_positionWeight = 2.526f;
+bool ui_saveAndExit = false;
+
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
@@ -50,6 +66,11 @@ int main(int argc, char** argv) {
     Camera &cam = renderState->camera;
     width = cam.resolution.x;
     height = cam.resolution.y;
+
+    if (useDenoiserUI) {
+        ui_iterations = renderState->iterations;
+        startupIterations = ui_iterations;
+    }
 
     glm::vec3 view = cam.view;
     glm::vec3 up = cam.up;
@@ -128,22 +149,62 @@ void runCuda() {
         pathtraceInit(scene);
     }
 
-    if (iteration < renderState->iterations) {
-        uchar4 *pbo_dptr = NULL;
-        iteration++;
+    if (useDenoiserUI == 0) {
+        if (iteration < renderState->iterations) {
+            uchar4* pbo_dptr = NULL;
+            iteration++;
+            cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+
+            // execute the kernel
+            int frame = 0;
+            pathtrace(pbo_dptr, frame, iteration);
+
+            // unmap buffer object
+            cudaGLUnmapBufferObject(pbo);
+        }
+        else {
+            saveImage();
+            pathtraceFree();
+            cudaDeviceReset();
+            exit(EXIT_SUCCESS);
+        }
+    }
+    else {
+        uchar4* pbo_dptr = NULL;
         cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
-        // execute the kernel
-        int frame = 0;
-        pathtrace(pbo_dptr, frame, iteration);
+        if (iteration < ui_iterations) {
+            iteration++;
+
+            // execute the kernel
+            int frame = 0;
+            pathtrace(pbo_dptr, frame, iteration);
+        }
+
+        setDenoise(ui_denoise);
+        setFilterSize(ui_filterSize);
+        setColorWeight(ui_colorWeight);
+        setNormalWeight(ui_normalWeight);
+        setPositionWeight(ui_positionWeight);
+
+        if (ui_showGbuffer) {
+            showGBuffer(pbo_dptr);
+        }
+        else if (ui_denoise) {
+            showDenoisedImage(pbo_dptr, iteration);
+        } else {
+            showImage(pbo_dptr, iteration);
+        }
 
         // unmap buffer object
         cudaGLUnmapBufferObject(pbo);
-    } else {
-        saveImage();
-        pathtraceFree();
-        cudaDeviceReset();
-        exit(EXIT_SUCCESS);
+
+        if (ui_saveAndExit) {
+            saveImage();
+            pathtraceFree();
+            cudaDeviceReset();
+            exit(EXIT_SUCCESS);
+        }
     }
 }
 
