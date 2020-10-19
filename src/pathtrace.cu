@@ -399,7 +399,8 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 						GBufferPixel* gBuffer,
 						glm::ivec2* offset,
 						float* kernel,
-						glm::vec3* image)
+						glm::vec3* image, 
+						float c_phi, float n_phi, float p_phi)
 {
 	// 2-D to 1-D ***
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -417,10 +418,6 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 	if (x < resolution.x && y < resolution.y)
 	{
 		int idx = x + (y * resolution.x);
-
-		float c_phi = 1.f;
-		float n_phi = 1.f;
-		float p_phi = 1.f;
 
 		// glm::vec3 cval = image[idx];
 		glm::vec3 cval = gBuffer[idx].c;
@@ -462,7 +459,7 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter, bool denoise) {
+void pathtrace(int frame, int iter, bool denoise, float c_phi, float n_phi, float p_phi) {
 
 	// std::cout << iter << std::endl;
 
@@ -578,7 +575,7 @@ void pathtrace(int frame, int iter, bool denoise) {
 	if (denoise) {
 		for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
 			// std::cout << stepWidth << std::endl;
-			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
+			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image, c_phi, n_phi, p_phi);
 			checkCUDAError("denoise");
 		}
 	}
