@@ -124,11 +124,7 @@ static glm::vec3* dev_denoised_image_input = NULL; // stored denoised image colo
 static glm::vec3* dev_denoised_image_output = NULL; // stored denoised image colors output
 static float* dev_filter = NULL; // blur filter kernel
 static glm::vec2* dev_offset = NULL; // filter offsets
-static std::vector<float> hst_filter{ 0.003765f ,0.015019f, 0.023792f, 0.015019f, 0.003765f,
-                                      0.015019f, 0.059912f, 0.094907f, 0.059912f, 0.015019f,
-                                      0.023792f, 0.094907f, 0.150342f, 0.094907f, 0.023792f,
-                                      0.015019f, 0.059912f, 0.094907f, 0.059912f, 0.015019f,
-                                      0.003765f , 0.015019f, 0.023792f, 0.015019f, 0.003765f };
+static std::vector<float> hst_filter;
 static std::vector<glm::vec2> hst_offset;
 
 void pathtraceInit(Scene *scene) {
@@ -158,20 +154,6 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_denoised_image_output, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_denoised_image_output, 0, pixelcount * sizeof(glm::vec3));
 
-    // Setup the filter kernel and offsets
-    // Assume filter size is 25 for now - potentially change this later!
-    for (int i = -2; i <= 2; ++i) {
-        for (int j = -2; j <= 2; ++j) {
-            hst_offset.push_back(glm::vec2(j, i));
-        }
-    }
-
-    cudaMalloc(&dev_filter, hst_filter.size() * sizeof(float));
-    cudaMemcpy(dev_filter, hst_filter.data(), hst_filter.size() * sizeof(float), cudaMemcpyHostToDevice);
-
-    cudaMalloc(&dev_offset, hst_offset.size() * sizeof(glm::vec2));
-    cudaMemcpy(dev_offset, hst_offset.data(), hst_offset.size() * sizeof(glm::vec2), cudaMemcpyHostToDevice);
-
     checkCUDAError("pathtraceInit");
 }
 
@@ -184,11 +166,32 @@ void pathtraceFree() {
     cudaFree(dev_gBuffer);
     cudaFree(dev_denoised_image_input);
     cudaFree(dev_denoised_image_output);
+}
+
+void filterInit(int filterSize) {
+    // compute offsets and kernel values
+    int o_range = filterSize / 2;
+    for (int i = -o_range; i <= o_range; ++i) {
+        for (int j = -o_range; j <= o_range; ++j) {
+            hst_offset.push_back(glm::vec2(j, i));
+            hst_filter.push_back((1.f / TWO_PI) * glm::pow(E, -(j * j + i * i) / 2.f));
+        }
+    }
+
+    cudaMalloc(&dev_filter, hst_filter.size() * sizeof(float));
+    cudaMemcpy(dev_filter, hst_filter.data(), hst_filter.size() * sizeof(float), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&dev_offset, hst_offset.size() * sizeof(glm::vec2));
+    cudaMemcpy(dev_offset, hst_offset.data(), hst_offset.size() * sizeof(glm::vec2), cudaMemcpyHostToDevice);
+    checkCUDAError("filterInit");
+}
+
+void filterFree() {
     hst_offset.clear();
+    hst_filter.clear();
     cudaFree(dev_filter);
     cudaFree(dev_offset);
-
-    checkCUDAError("pathtraceFree");
+    checkCUDAError("filterFree");
 }
 
 /**
@@ -394,8 +397,10 @@ __global__ void computeDenoisedImage(
         // loop over all the pixels in the filter
         for (int i = 0; i < filterSize; ++i) {
             // compute filter pixel coordinate
-            int pix_x = x + offset[i].x * stepWidth;
-            int pix_y = y + offset[i].y * stepWidth;
+            int o_x = offset[i].x;
+            int o_y = offset[i].y;
+            int pix_x = x + o_x * stepWidth;
+            int pix_y = y + o_y * stepWidth;
 
             //if (pix_x < 0 || pix_x >= resolution.x || pix_y < 0 || pix_y >= resolution.y) continue; // skip out of bound coordinates
             // Clamp to edges

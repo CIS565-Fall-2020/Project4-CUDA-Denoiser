@@ -24,7 +24,9 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
+int ui_filterSize = 5;
+int prev_ui_filterSize = ui_filterSize;
+int ui_blurSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -154,6 +156,8 @@ void runCuda() {
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+        filterFree();
+        filterInit(ui_filterSize);
     }
 
     uchar4 *pbo_dptr = NULL;
@@ -173,14 +177,24 @@ void runCuda() {
       showImage(pbo_dptr, iteration, denoise_computed);
     }
 
+    // Set limit for ui_filterSize
+    if (ui_filterSize < 1) ui_filterSize = 1;
+    if (ui_filterSize > 49) ui_filterSize = 49;
+
+    if (prev_ui_filterSize != ui_filterSize) {
+        filterFree();
+        filterInit(ui_filterSize);
+        prev_ui_filterSize = ui_filterSize;
+    }
+
     // compute denoised image
     if (ui_denoise) {
         if (!denoise_computed) {
             // compute denoised image from current buffers
-            // use blur width to determine number of denoise iterations (assume filter dim is 5x5)
+            // use blur width to determine number of denoise iterations
             int denoise_iter = 0;
-            int max_width = 5; // replace this later with a variable
-            while (max_width <= ui_filterSize) {
+            int max_width = ui_filterSize; // replace this later with a variable
+            while (max_width <= ui_blurSize) {
                 denoise_iter++;
                 max_width += (int)glm::pow(2, denoise_iter + 1);
             }
@@ -200,6 +214,7 @@ void runCuda() {
     if (ui_saveAndExit) {
         saveImage();
         pathtraceFree();
+        filterFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
     }

@@ -5,6 +5,8 @@
 
 void pathtraceInit(Scene *scene);
 void pathtraceFree();
+void filterInit(int filterSize);
+void filterFree();
 void pathtrace(int frame, int iteration);
 void denoiseImage(int num_iters, float c_phi, float n_phi, float p_phi);
 void showGBuffer(uchar4 *pbo, int buffer_type);
