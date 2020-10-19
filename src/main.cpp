@@ -25,6 +25,7 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 int ui_filterSize = 80;
+int lastFilterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -118,6 +119,19 @@ void saveImage() {
     // CHECKITOUT
     img.savePNG(filename);
     //img.saveHDR(filename);  // Save a Radiance HDR file
+
+	image imgDenoised(width, height);
+
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++) {
+			int index = x + (y * width);
+			glm::vec3 pix = renderState->imageDenoised[index];
+			imgDenoised.setPixel(width - 1 - x, y, glm::vec3(pix));
+		}
+	}
+	ss << "_denoised";
+	filename = ss.str();
+	imgDenoised.savePNG(filename);
 }
 
 void runCuda() {
@@ -125,7 +139,10 @@ void runCuda() {
       lastLoopIterations = ui_iterations;
       camchanged = true;
     }
-
+	if (lastFilterSize != ui_filterSize) {
+		lastFilterSize = ui_filterSize;
+		camchanged = true;
+	}
     if (camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
@@ -160,12 +177,27 @@ void runCuda() {
     if (iteration < ui_iterations) {
         iteration++;
 
+		// start timer
+		cudaEvent_t start, stop;
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
+		cudaEventRecord(start);
+
         // execute the kernel
         int frame = 0;
         pathtrace(frame, iteration);
+
+		// time
+		cudaEventRecord(stop);
+		cudaEventSynchronize(stop);
+		float milliseconds = 0.f;
+		cudaEventElapsedTime(&milliseconds, start, stop);
+		std::cout << "Iteration " << iteration << ": " << milliseconds << " ms" << std::endl;
     }
 
-    if (ui_showGbuffer) {
+	if (ui_denoise) {
+		showDenoiser(pbo_dptr);
+	} else if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     } else {
       showImage(pbo_dptr, iteration);
