@@ -104,6 +104,8 @@ The table shows that although oct encoding could save memory bandwidth for G-buf
 
 **Things to mention:** The algorithm described in [paper](http://jcgt.org/published/0003/02/01/paper.pdf) might cause divided by zero. So be sure to add an small number at the denominator.
 
+![oct_normal](img/oct_normal.svg)
+
 
 
 ### Acknowledge
