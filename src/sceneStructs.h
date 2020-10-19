@@ -88,6 +88,10 @@ struct GBufferPixel {
   glm::vec3 normal;
 #endif
   
+#if buffer_depth
+  float depth;
+#else
   glm::vec3 world_p;
+#endif
   glm::vec3 originColor;
 };
