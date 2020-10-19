@@ -614,6 +614,7 @@ __global__ void SubStep_A_Trous(
     float normal_var,
     float position_var,
     float color_var,
+    float depth_var,
     glm::vec3* image,
     glm::vec3* image_buf,
     glm::vec3* image_final
@@ -642,7 +643,7 @@ __global__ void SubStep_A_Trous(
 #endif
             
 #if buffer_depth
-            glm::vec3 p_position = glm::vec3(x, y, gBuffer[index].depth);
+            float p_depth = gBuffer[index].depth;
 #else
             glm::vec3 p_position = gBuffer[index].world_p;
 #endif
@@ -670,7 +671,7 @@ __global__ void SubStep_A_Trous(
 #endif
                         
 #if buffer_depth
-                        glm::vec3 q_position = glm::vec3(x, y, gBuffer[cur_index].depth);
+                        float q_depth =gBuffer[cur_index].depth;
 #else
                         glm::vec3 q_position = gBuffer[cur_index].world_p;
 #endif
@@ -679,7 +680,12 @@ __global__ void SubStep_A_Trous(
                         glm::vec3 q_color = gBuffer[cur_index].originColor;
 
                         float w_n = expf(-glm::length(q_normal - p_normal) / normal_var);
+#if buffer_depth
+                        float w_p = expf( - abs(q_depth - p_depth) / depth_var );
+#else
                         float w_p = expf(-glm::length(q_position - p_position) / position_var);
+#endif
+                        
                         float w_c = expf(-glm::length(q_color - p_color) / color_var);
                         float w_pq = w_n * w_p * w_c;
 
@@ -751,6 +757,7 @@ void deNoise(
             normal_var/ui_normalWeight,
             position_var/ ui_positionWeight,
             origin_color_var/ ui_colorWeight,
+            depth_var/ ui_positionWeight,
 
             dev_denoised_image,
             dev_image_buf,

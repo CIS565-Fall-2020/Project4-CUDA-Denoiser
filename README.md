@@ -84,7 +84,7 @@ Also for better saving, instead of saving by parsing the host image pointer, her
 
 ### Extra Credit:
 
-##### Gbuffer optimization:
+##### 1. Gbuffer optimization:
 
 **oct-encoding normal** : Here we implement the normal encoding method mentioned in [paper](http://jcgt.org/published/0003/02/01/paper.pdf): A survey of Efficient Representations for Independent Unit Vectors.
 
@@ -100,11 +100,27 @@ Here shows the performance for oct encode in denoising
 | ------------ | --------- | ---------- |
 | Cornell Box  | 330.6     | 410.8      |
 
-The table shows that although oct encoding could save memory bandwidth for G-buffer, it could cause more overhead since every time we fetch the normal from G-buffer, we need to decode the oct representation.
+The table shows that although oct encoding could save memory bandwidth for G-buffer, but it could cause more time overhead. Since every time we fetch the normal from G-buffer, we need to decode the oct representation.
 
 **Things to mention:** The algorithm described in [paper](http://jcgt.org/published/0003/02/01/paper.pdf) might cause divided by zero. So be sure to add an small number at the denominator.
 
 ![oct_normal](img/oct_normal.svg)
+
+##### 2. Z-depth optimization
+
+After the lessons from oct-encoding, we should better decrease the G-buffer size, meanwhile decrease the calculation. So here we store the depth(float) instead of position(float3). Furthermore, we do not restore the position from projection matrix(actually we need view matrix as well to do this) , we directly apply the depth variance as the weight. 
+
+
+
+![oct_normal](img/depth.png)
+
+
+
+| millisecondsas | store depth | store position |
+| -------------- | ----------- | -------------- |
+| Cornell Box    | 231.78      | 337.5          |
+
+With a slightly not that obvious results (denoise by depth performs weaker than position from my experiment), the denoising could be speed up a lot.
 
 
 
