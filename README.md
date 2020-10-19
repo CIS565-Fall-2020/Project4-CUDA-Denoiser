@@ -22,9 +22,9 @@ Add
 
 ### Intro
 
-Here shows the results with 20 samples.
+Here shows the results with only 20 samples.
 
-![](img/teaser.png)
+![Teaser](img/teaser.svg)
 
 This repo contains  a CUDA-based path-tracer Denoiser based on [paper](https://jo.dreggn.org/home/2010_atrous.pdf)(2010) : 
 
@@ -64,7 +64,7 @@ Here shows the runtime for each scene
 
 Since the algorithm is **O(N)** for **N** pixel, the 
 
-From the results and the paper we could find out that if the scenes become more complicated, the materials turn more diverse, the donoised results would go worse because the algorithm is influenced by the variance from normal, color and positions. 
+From the results and the paper we could find out that if the scenes become more complicated, the materials turn more diverse, the denoised results would go worse because the algorithm is influenced by the variance from normal, color and positions. 
 
 
 
@@ -102,7 +102,9 @@ Here shows the performance for oct encode in denoising
 
 The table shows that although oct encoding could save memory bandwidth for G-buffer, it could cause more overhead since every time we fetch the normal from G-buffer, we need to decode the oct representation.
 
-**Things to mention:** The algorithm showed in [paper](http://jcgt.org/published/0003/02/01/paper.pdf) might cause divided by zero. So be sure to add an small number at the denominator.
+**Things to mention:** The algorithm described in [paper](http://jcgt.org/published/0003/02/01/paper.pdf) might cause divided by zero. So be sure to add an small number at the denominator.
+
+
 
 ### Acknowledge
 
