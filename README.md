@@ -24,7 +24,7 @@ Add
 
 Here shows the results with only 20 samples.
 
-![Teaser](img/teaser.svg)
+![Teaser](img/Teaser.svg)
 
 This repo contains  a CUDA-based path-tracer Denoiser based on [paper](https://jo.dreggn.org/home/2010_atrous.pdf)(2010) : 
 
