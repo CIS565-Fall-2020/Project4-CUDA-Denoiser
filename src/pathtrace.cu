@@ -70,13 +70,13 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
     }
 }
 
-__host__ __device__ glm::vec2 signNotZero(const glm::vec2& v) {
+__host__ __device__ glm::vec2 signNotZero(glm::vec2 v) {
     return glm::vec2(
         v.x >= 0.0f ? 1.0f : -1.0f,
         v.y >= 0.0f ? 1.0f : -1.0f);
 }
 
-__host__ __device__ glm::vec3 oct_to_float32_3(const glm::vec2& e) {
+__host__ __device__ glm::vec3 oct_to_float32_3(glm::vec2 e) {  
     glm::vec3 v = glm::vec3(e.x, e.y, 1.0f - abs(e.x) - abs(e.y));
     if (v.z < 0) {
         glm::vec2 v_xy = (glm::vec2(1.0f) - glm::abs(glm::vec2(v.y, v.x)) * signNotZero(glm::vec2(v)));
@@ -86,9 +86,10 @@ __host__ __device__ glm::vec3 oct_to_float32_3(const glm::vec2& e) {
     return glm::normalize(v);
 }
 
-__host__ __device__ glm::vec2 float32_3_to_oct(const glm::vec3& v) {
-    glm::vec2 p = glm::vec2(v) * (1.0f / (abs(v.x) + abs(v.y) + abs(v.z)));
-    return (v.z <= 0.0f) ? (signNotZero(p) * (glm::vec2(1.0f) - glm::abs(glm::vec2(p.y, p.x)))) : p;
+__host__ __device__ glm::vec2 float32_3_to_oct(glm::vec3 v) {
+    glm::vec2 p = glm::vec2(v.x, v.y) * (1.0f / (abs(v.x) + abs(v.y) + abs(v.z) + 0.001f));
+    glm::vec2 out = (v.z <= 0.0f) ? (signNotZero(p) * (glm::vec2(1.0f) - glm::abs(glm::vec2(p.y, p.x)))) : p;
+    return out;
 }
 
 __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, int show_idx) {
@@ -112,9 +113,6 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 #else
             glm::vec3 fake_normal = (gBuffer[index].normal + glm::vec3(1.0f)) * 0.5f * 255.0f;
 #endif
-
-            
-
             pbo[index].w = 0;
             pbo[index].x = fake_normal.x;
             pbo[index].y = fake_normal.y;
@@ -390,7 +388,6 @@ __global__ void generateGBuffer (
     gBuffer[idx].t = shadeableIntersections[idx].t;
 #if oct_encode
     gBuffer[idx].normal = float32_3_to_oct(shadeableIntersections[idx].surfaceNormal);
-    float2 p = make_float2(gBuffer[idx].normal.x, gBuffer[idx].normal.y);
 #else
     gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
 #endif
@@ -399,8 +396,7 @@ __global__ void generateGBuffer (
     gBuffer[idx].world_p = getPointOnRay(
         pathSegments[idx].ray, 
         shadeableIntersections[idx].t
-    ); 
-    float3 w_p = make_float3(gBuffer[idx].world_p.x, gBuffer[idx].world_p.y, gBuffer[idx].world_p.z);
+    );
   }
 }
 
@@ -620,8 +616,6 @@ __global__ void SubStep_A_Trous(
 
 #if oct_encode
             glm::vec3 p_normal = oct_to_float32_3(gBuffer[index].normal);
-            float2 p_2 = make_float2(gBuffer[index].normal.x, gBuffer[index].normal.y);
-            float3 p_3 = make_float3(p_normal.x, p_normal.y, p_normal.z);
 #else
             glm::vec3 p_normal = gBuffer[index].normal;
 
@@ -646,8 +640,6 @@ __global__ void SubStep_A_Trous(
 
 #if oct_encode
                         glm::vec3 q_normal = oct_to_float32_3(gBuffer[cur_index].normal);
-                        float3 q_3 = make_float3(q_normal.x, q_normal.y, q_normal.z);
-                        float2 q_2 = make_float2(gBuffer[cur_index].normal.x, gBuffer[cur_index].normal.y);
 #else
                         glm::vec3 q_normal = gBuffer[cur_index].normal;
 #endif
