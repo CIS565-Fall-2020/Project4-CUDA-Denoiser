@@ -167,8 +167,8 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 	// convert all even sized kernels into odd sized kernels so
 	// that they have a definite center
 	kernelWidth = kernelSize;
-	if (!(kernelWidth % 2))
-		kernelWidth--;
+	//if (!(kernelWidth % 2))
+	//	kernelWidth--;
 
 	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
@@ -194,7 +194,6 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 
 	// these will probably need to be arguments into this function from the ui
 	lvlimit = 5;
-	kernelWidth = 5;
 
 	std::vector<glm::ivec2> offset(kernelWidth * kernelWidth);
 
@@ -209,7 +208,7 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 	// kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
 	// for (int i = 0; i < kernelWidth * kernelWidth; i++)
 	// kernel.at(i) = kernel.at(i) / 273.f;
-	// kernel = { 0.003765, 0.015019, 0.023792, 0.015019, 0.003765, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.023792, 0.094907, 0.150342, 0.094907, 0.023792, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.003765, 0.015019, 0.023792, 0.015019, 0.003765 };
+	kernel = { 0.003765, 0.015019, 0.023792, 0.015019, 0.003765, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.023792, 0.094907, 0.150342, 0.094907, 0.023792, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.003765, 0.015019, 0.023792, 0.015019, 0.003765 };
 
 	gaussianFilter(kernel, kernelWidth);
 
