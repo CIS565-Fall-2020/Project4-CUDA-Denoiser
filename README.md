@@ -32,7 +32,7 @@ This repo contains  a CUDA-based path-tracer Denoiser based on [paper](https://j
 
 Basically, Denoiser serves to produce a smoother results for path-traced image even under fewer samples. Here we manage to implement the guided filtering which not only smooth the noise but also keep the edge intact.
 
-Different from [Guided filtering](http://kaiminghe.com/eccv10/) (ECCV2010) which only takes semantic mask or itself as guidance(only one).  this paper takes `normal, color and position` as guidance to filter the image. 
+Different from [Guided image filtering](http://kaiminghe.com/eccv10/) (ECCV2010) which only takes semantic mask or itself as guidance(only one).  this paper takes `normal, color and position` as guidance to filter the image. 
 
 ![](img/pipeline.svg)
 

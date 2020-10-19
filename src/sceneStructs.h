@@ -49,6 +49,8 @@ struct Camera {
     glm::vec3 up;
     glm::vec3 right;
     glm::vec2 fov;
+
+    float fovy;
     glm::vec2 pixelLength;
 };
 

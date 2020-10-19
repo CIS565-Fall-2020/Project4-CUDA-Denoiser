@@ -50,6 +50,8 @@ extern const char* ui_showItem[];
 extern const int ui_ItemNum;
 extern int ui_denoiseIteration;
 
+extern glm::mat4 inverse_projection_matrix;
+
 void runCuda(PerformanceTimer& m_timer);
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);

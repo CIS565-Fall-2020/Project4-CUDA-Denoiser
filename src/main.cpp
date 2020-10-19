@@ -59,6 +59,10 @@ int iteration;
 int width;
 int height;
 
+// jack12 for depth recovery
+glm::mat4 inverse_projection_matrix;
+
+
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
@@ -102,6 +106,13 @@ int main(int argc, char** argv) {
     ogLookAt = cam.lookAt;
     zoom = glm::length(cam.position - ogLookAt);
 
+    glm::mat4 projection_matrix = glm::perspective(
+        glm::radians(cam.fovy),
+        (float)width / (float)height,
+        0.1f,
+        100.0f);
+
+    inverse_projection_matrix = glm::inverse(projection_matrix);
     // Initialize CUDA and GL components
     init();
 
