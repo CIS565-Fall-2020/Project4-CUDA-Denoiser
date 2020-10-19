@@ -174,9 +174,10 @@ void pathtraceInit(Scene* scene) {
 	cudaMemcpy(dev_offset, offset.data(), kernelWidth * kernelWidth * sizeof(glm::ivec2), cudaMemcpyHostToDevice);
 
 	std::vector<float> kernel(kernelWidth * kernelWidth);
-	kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
-	for (int i = 0; i < kernelWidth * kernelWidth; i++)
-		kernel.at(i) = kernel.at(i) / 273.f;
+	//kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
+	//for (int i = 0; i < kernelWidth * kernelWidth; i++)
+	//	kernel.at(i) = kernel.at(i) / 273.f;
+	kernel = { 0.003765, 0.015019, 0.023792, 0.015019, 0.003765, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.023792, 0.094907, 0.150342, 0.094907, 0.023792, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.003765, 0.015019, 0.023792, 0.015019, 0.003765 };
 
 	cudaMalloc(&dev_kernel, kernelWidth * kernelWidth * sizeof(float));
 	cudaMemcpy(dev_kernel, kernel.data(), kernelWidth * kernelWidth * sizeof(float), cudaMemcpyHostToDevice);
@@ -392,7 +393,7 @@ __global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image,
 }
 
 // Add the current iteration's output to the overall image
-__global__ void denoise(glm::ivec2 resolution, 
+__global__ void aTrousDenoise(glm::ivec2 resolution,
 						int stepWidth, 
 						int kernelWidth,
 						GBufferPixel* gBuffer,
@@ -438,15 +439,15 @@ __global__ void denoise(glm::ivec2 resolution,
 
 			glm::vec3 t = cval - ctmp;
 			float dist2 = glm::dot(t, t);
-			float c_w = min(exp(-dist2 / c_phi), 1.f);
+			float c_w = min(exp(-(dist2) / c_phi), 1.f);
 
 			t = GBPix.n - GBPix2.n;
 			dist2 = max(glm::dot(t, t) / (stepWidth * stepWidth), 0.f);
-			float n_w = min(exp(-dist2 / n_phi), 1.f);
+			float n_w = min(exp(-(dist2) / n_phi), 1.f);
 
 			t = GBPix.p - GBPix2.p;
 			dist2 = glm::dot(t, t);
-			float p_w = min(exp(-dist2 / p_phi), 1.f);
+			float p_w = min(exp(-(dist2) / p_phi), 1.f);
 
 			float weight = c_w * n_w * p_w;
 			sum += ctmp * weight * kernel[i];
@@ -454,8 +455,6 @@ __global__ void denoise(glm::ivec2 resolution,
 		}
 
 		gBuffer[idx].c = sum / cum_w;
-		// image[idx] = sum / cum_w;
-		// image[idx] = cval;
 	}
 }
 
@@ -463,12 +462,9 @@ __global__ void denoise(glm::ivec2 resolution,
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter) {
+void pathtrace(int frame, int iter, bool denoise) {
 
-	std::cout << iter << std::endl;
-
-	if (iter > 9)
-		return;
+	// std::cout << iter << std::endl;
 
 	const int traceDepth = hst_scene->state.traceDepth;
 	const Camera& cam = hst_scene->state.camera;
@@ -579,10 +575,12 @@ void pathtrace(int frame, int iter) {
 	checkCUDAError("colorGather");
 
 	// call denoise here (2-D)
-	for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
-		std::cout << stepWidth << std::endl;
-		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
-		checkCUDAError("denoise");
+	if (denoise) {
+		for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
+			// std::cout << stepWidth << std::endl;
+			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image);
+			checkCUDAError("denoise");
+		}
 	}
 
 	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_image, dev_paths);

@@ -1,3 +1,6 @@
+i think that the strange shifting up thing with the denoised image was due to me using the same 
+image data across complete iterations
+
 added dev_bufferImage to the pathtrace.cu
 
 filter size = filter width

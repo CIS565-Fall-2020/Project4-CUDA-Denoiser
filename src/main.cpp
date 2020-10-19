@@ -181,7 +181,7 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_denoise);
     }
 
     if (ui_showGbuffer) {
