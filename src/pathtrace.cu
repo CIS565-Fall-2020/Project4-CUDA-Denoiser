@@ -80,11 +80,11 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
         pbo[index].y = timeToIntersect;
         pbo[index].z = timeToIntersect;
 		*/
-		glm::vec3 gvec3 = glm::abs(gBuffer[index].position);
+		glm::vec3 gvec3 = glm::abs(gBuffer[index].normal);
 		glm::ivec3 pvec3;
-		pvec3.x = glm::clamp((int)(gvec3.x * 25.0), 0, 255);
-		pvec3.y = glm::clamp((int)(gvec3.y * 25.0), 0, 255);
-		pvec3.z = glm::clamp((int)(gvec3.z * 25.0), 0, 255);
+		pvec3.x = glm::clamp((int)(gvec3.x * 255.0), 0, 255);
+		pvec3.y = glm::clamp((int)(gvec3.y * 255.0), 0, 255);
+		pvec3.z = glm::clamp((int)(gvec3.z * 255.0), 0, 255);
 
 		pbo[index].w = 0;
 		pbo[index].x = pvec3.x;
@@ -327,17 +327,13 @@ __global__ void Atrous(
 		return;
 	}
 	int index = x + (y * cam.resolution.x);
-	glm::vec3 sum(0.0);
-	glm::vec3 cval = dev_image[index];
 	glm::vec3 nval = dev_gBuffer[index].normal;
 	glm::vec3 pval = dev_gBuffer[index].position;
 
-	float cum_w = 0.0;
-
 	float kernel[25] = { 0.0625, 0.0625, 0.0625, 0.0625, 0.0625,
-					0.0625, 0.25,   0.225,  0.25,   0.0625,
+					0.0625, 0.25,   0.25,  0.25,   0.0625,
 					0.0625, 0.25,   0.375,  0.25,   0.0625,
-					0.0625, 0.25,   0.225,  0.25,   0.0625,
+					0.0625, 0.25,   0.25,  0.25,   0.0625,
 					0.0625, 0.0625, 0.0625, 0.0625, 0.0625 };
 
 	glm::vec2 offset[25] = { glm::vec2(-2, -2), glm::vec2(-2, -1), glm::vec2(-2, 0), glm::vec2(-2, 1), glm::vec2(-2, 2),
@@ -351,6 +347,9 @@ __global__ void Atrous(
 		if (stepwidth * 5 > nStep) {
 			break;
 		}
+		glm::vec3 sum(0.0);
+		glm::vec3 cval = dev_image[index];
+		float cum_w = 0.0;
 		for (int i = 0; i < 25; i++) {
 			int nx = x + offset[i][0] * stepwidth;
 			int ny = y + offset[i][1] * stepwidth;
@@ -366,7 +365,7 @@ __global__ void Atrous(
 
 			glm::vec3 ntmp = dev_gBuffer[nindex].normal;
 			t = nval - ntmp;
-			dist2 = max(dot(t, t) / (stepwidth*stepwidth), 0.0f);
+			dist2 = max(dot(t, t) , 0.0f);
 			float n_w = min(exp(-(dist2) / n_phi), 1.0f);
 
 			glm::vec3 ptmp = dev_gBuffer[nindex].position;
@@ -378,6 +377,7 @@ __global__ void Atrous(
 			sum += ctmp * weight * kernel[i];
 			cum_w += weight * kernel[i];
 		}
+		__syncthreads();
 		dev_image[index] = sum / cum_w;
 	}
 }
@@ -485,7 +485,7 @@ void pathtrace(int frame, int iter, float c_phi, float n_phi, float p_phi, int n
     ///////////////////////////////////////////////////////////////////////////
 
 	// denoising
-	//if (denoise) {
+	if (denoise) {
 		Atrous << <blocksPerGrid2d, blockSize2d >> > (
 			c_phi,
 			n_phi,
@@ -494,7 +494,7 @@ void pathtrace(int frame, int iter, float c_phi, float n_phi, float p_phi, int n
 			dev_image,
 			dev_gBuffer,
 			nStep);
-	//}
+	}
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
     // Otherwise, screenshots are also acceptable.
