@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(cis565_denoiser)
+project(cis565_path_tracer)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -71,8 +71,15 @@ set(headers
     src/pathtrace.h
     src/scene.h
     src/sceneStructs.h
+    src/json.hpp
     src/preview.h
     src/utilities.h
+    src/tiny_gltf.h
+    src/macros.h
+    src/gltf-loader.h
+    src/material.h
+    src/mesh.h
+    src/octree.h
     )
 
 set(sources
@@ -84,6 +91,8 @@ set(sources
     src/scene.cpp
     src/preview.cpp
     src/utilities.cpp
+    src/gltf-loader.cc
+    src/octree.cpp
     )
 
 set(imgui
@@ -102,6 +111,7 @@ set(imgui
     imgui/imgui_impl_opengl3.h
     )
 
+
 list(SORT headers)
 list(SORT sources)
 list(SORT imgui)
@@ -110,7 +120,8 @@ source_group(Headers FILES ${headers})
 source_group(Sources FILES ${sources})
 source_group(imgui FILES ${imgui})
 
-#add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
+
+add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
 
 cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui})
 target_link_libraries(${CMAKE_PROJECT_NAME}
