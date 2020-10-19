@@ -78,10 +78,11 @@ __host__ __device__ glm::vec2 signNotZero(glm::vec2 v) {
 
 __host__ __device__ glm::vec3 oct_to_float32_3(glm::vec2 e) {  
     glm::vec3 v = glm::vec3(e.x, e.y, 1.0f - abs(e.x) - abs(e.y));
-    if (v.z < 0) {
-        glm::vec2 v_xy = (glm::vec2(1.0f) - glm::abs(glm::vec2(v.y, v.x)) * signNotZero(glm::vec2(v)));
-        v.x = v_xy.x;
-        v.y = v_xy.y;
+    if (v.z < 0.000001) {
+        glm::vec2 v_xy = (glm::vec2(1.0f) - glm::abs(glm::vec2(v.y, v.x)));
+        glm::vec2 sign_xy =  signNotZero(glm::vec2(v.x, v.y));
+        v.x = v_xy.x * sign_xy.x;
+        v.y = v_xy.y * sign_xy.y;
     }
     return glm::normalize(v);
 }
@@ -730,6 +731,13 @@ void deNoise(
             //std::swap(dev_denoised_image, dev_image_sum);
         } 
     }
+}
+
+void test_oct() {
+    glm::vec3 a = glm::vec3(-1.0f, 0.0f, 0.0f);
+    glm::vec2 oct_a = float32_3_to_oct(a);
+    glm::vec3 out_a = oct_to_float32_3(oct_a);
+    std::cout << "a" << a.x;
 }
 
 void getVariance(const GBufferPixel* dev_gBuffer) {

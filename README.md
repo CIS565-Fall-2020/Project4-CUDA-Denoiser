@@ -44,11 +44,11 @@ From the image showed before, we could see that the 20 samples with denoising ap
 
 
 
-##### Runtime:![Performance](img/Performance.svg)
+##### Runtime:<img src="img/Performance.svg" alt="Performance" style="zoom: 150%;" />
 
 Here shows results in different parameters:
 
-![parameter](img/Tune_parameter.svg)
+<img src="img/Tune_parameter.svg" alt="parameter" style="zoom:150%;" />
 
 For Cornell Box scene, I find the best match is with weight `color: 0.65`,`normal: 0.56`, `position: 0.4`
 
