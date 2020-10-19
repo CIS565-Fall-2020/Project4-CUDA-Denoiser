@@ -134,6 +134,8 @@ int Scene::loadCamera() {
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
     float fovx = (atan(xscaled) * 180) / PI;
     camera.fov = glm::vec2(fovx, fovy);
+    //Jack12 directly read fovy
+    camera.fovy = fovy;
 
 	camera.right = glm::normalize(glm::cross(camera.view, camera.up));
 	camera.pixelLength = glm::vec2(2 * xscaled / (float)camera.resolution.x

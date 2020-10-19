@@ -73,6 +73,8 @@ set(headers
     src/sceneStructs.h
     src/preview.h
     src/utilities.h
+    src/cfg.h
+    src/PerformanceTimer.h
     )
 
 set(sources

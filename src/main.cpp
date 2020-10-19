@@ -23,12 +23,26 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
+bool ui_denoise = true;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
+
+// Jack12 add
+int ui_showIdx = 0;
+int ui_denoiseIteration = 5;
+
+const const char* ui_showItem[] = {
+    "Image", 
+    "IntersectionTime",
+    "Normal",
+    "Position",
+    "OriginColor"
+};
+const int ui_ItemNum = 5;
+
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -44,6 +58,10 @@ int iteration;
 
 int width;
 int height;
+
+// jack12 for depth recovery
+glm::mat4 inverse_projection_matrix;
+
 
 //-------------------------------
 //-------------MAIN--------------
@@ -88,6 +106,13 @@ int main(int argc, char** argv) {
     ogLookAt = cam.lookAt;
     zoom = glm::length(cam.position - ogLookAt);
 
+    glm::mat4 projection_matrix = glm::perspective(
+        glm::radians(cam.fovy),
+        (float)width / (float)height,
+        0.1f,
+        100.0f);
+
+    inverse_projection_matrix = glm::inverse(projection_matrix);
     // Initialize CUDA and GL components
     init();
 
@@ -120,7 +145,34 @@ void saveImage() {
     //img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
-void runCuda() {
+void saveImagePbo(const uchar4* pbo) {
+    
+    float samples = iteration;
+    image img(width, height);
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix;
+            pix.x= pbo[index].x;
+            pix.y= pbo[index].y;
+            pix.z= pbo[index].z;
+            
+            img.setPixel(width - 1 - x, y, glm::vec3(pix));
+        }
+    }
+
+    std::string filename = renderState->imageName;
+    std::ostringstream ss;
+    ss << filename << "." << startTimeString << "." << samples << "samp";
+    filename = ss.str();
+
+    // CHECKITOUT
+    img.savePNG(filename);
+}
+
+bool out_flag = false;
+void runCuda(PerformanceTimer& m_timer) {
     if (lastLoopIterations != ui_iterations) {
       lastLoopIterations = ui_iterations;
       camchanged = true;
@@ -144,6 +196,7 @@ void runCuda() {
         cameraPosition += cam.lookAt;
         cam.position = cameraPosition;
         camchanged = false;
+        out_flag = false;
       }
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU
@@ -152,11 +205,14 @@ void runCuda() {
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+
+        m_timer.startSysTimer();
     }
 
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
+    
     if (iteration < ui_iterations) {
         iteration++;
 
@@ -164,11 +220,31 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
+    else {
+        // Jack12 add timer here
+         m_timer.endSysTimer();
 
-    if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+         double time_passed = m_timer.getSysElapsedTimeForPreviousOperation();
+         if (out_flag == false) {
+             std::cout <<
+                 "Average iteration time " <<
+                 time_passed / iteration <<
+                 std::endl;
+             out_flag = true;
+         }
+    }
+
+    if (ui_showIdx > 0) {
+      showGBuffer(pbo_dptr, ui_showIdx);
     } else {
-      showImage(pbo_dptr, iteration);
+        if (ui_denoise) {
+            deNoise(
+                ui_denoiseIteration,
+                ui_normalWeight,
+                ui_positionWeight,
+                ui_colorWeight);
+        }
+      showImage(pbo_dptr, iteration, ui_denoise);
     }
 
     // unmap buffer object
@@ -176,6 +252,7 @@ void runCuda() {
 
     if (ui_saveAndExit) {
         saveImage();
+        //saveImagePbo(pbo_dptr); not work
         pathtraceFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
@@ -190,7 +267,13 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         glfwSetWindowShouldClose(window, GL_TRUE);
         break;
       case GLFW_KEY_S:
-        saveImage();
+        //saveImage();
+        save_img_from_frame(
+            ui_showItem[ui_showIdx],
+            renderState,
+            startTimeString,
+            iteration
+        );
         break;
       case GLFW_KEY_SPACE:
         camchanged = true;

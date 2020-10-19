@@ -8,6 +8,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cuda.h>
+#include <device_launch_parameters.h>
 
 #define PI                3.1415926535897932384626422832795028841971f
 #define TWO_PI            6.2831853071795864769252867665590057683943f
@@ -23,4 +25,9 @@ namespace utilityCore {
     extern glm::mat4 buildTransformationMatrix(glm::vec3 translation, glm::vec3 rotation, glm::vec3 scale);
     extern std::string convertIntToString(int number);
     extern std::istream& safeGetline(std::istream& is, std::string& t); //Thanks to http://stackoverflow.com/a/6089413
+    // jack12 add oct encoding
+
+    __host__ __device__ glm::vec2 signNotZero(const glm::vec2& v);
+    glm::vec2 float32_3_to_oct(const glm::vec3& v);
+    
 }

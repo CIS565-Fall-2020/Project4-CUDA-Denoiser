@@ -36,6 +36,47 @@ void initTextures() {
     glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 }
 
+void save_img_from_frame(
+    const char* show_item,
+    const RenderState* renderState,
+    const std::string& startTimeString,
+    const int& samples
+) {
+    GLubyte* buffer = new GLubyte[width * height * 4];
+    glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);
+
+    image img(width, height);
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix;
+            pix.x = buffer[4 * index + 2] / 255.0;
+            pix.y = buffer[4 * index + 1] / 255.0;
+            pix.z = buffer[4 * index + 0] / 255.0;
+            img.setPixel(x, height - 1 - y, glm::vec3(pix));
+        }
+    }
+
+    std::string filename = renderState->imageName;
+    std::ostringstream ss;
+    ss << filename << "." << show_item << "." << startTimeString << "." << samples << "samp"
+        ;
+    if (ui_denoise) {
+        ss << "." << "W_col_" << ui_colorWeight
+            << "." << "W_norm_" << ui_normalWeight
+            << "." << "W_pos_" << ui_positionWeight;
+    }
+    else {
+        ss << "." << "Noised";
+    }
+    filename = ss.str();
+
+    // CHECKITOUT
+    img.savePNG(filename);
+    delete [] buffer;
+}
+
 void initVAO(void) {
     GLfloat vertices[] = {
         -1.0f, -1.0f,
@@ -108,6 +149,8 @@ void cleanupCuda() {
         deleteTexture(&displayImage);
     }
 }
+
+
 
 void initCuda() {
     cudaGLSetGLDevice(0);
@@ -213,16 +256,20 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
 
     ImGui::Checkbox("Denoise", &ui_denoise);
+    // add iteration to control A-trous step
+    ImGui::SliderInt("A trous steps", &ui_denoiseIteration, 0, 8);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    //ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 64.0f);
 
     ImGui::Separator();
 
-    ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
-
+    //ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    ImGui::Combo("Show What", &ui_showIdx, ui_showItem, ui_ItemNum);
+   // std::cout << "preview: " << ui_showIdx << std::endl;
+    
     ImGui::Separator();
 
     if (ImGui::Button("Save image and exit")) {
@@ -236,9 +283,10 @@ void drawGui(int windowWidth, int windowHeight) {
 }
 
 void mainLoop() {
+    PerformanceTimer m_timer;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-        runCuda();
+        runCuda(m_timer);
 
         string title = "CIS565 Path Tracer | " + utilityCore::convertIntToString(iteration) + " Iterations";
         glfwSetWindowTitle(window, title.c_str());
