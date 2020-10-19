@@ -397,24 +397,23 @@ __global__ void computeDenoisedImage(
             int pix_x = x + offset[i].x * stepWidth;
             int pix_y = y + offset[i].y * stepWidth;
 
-            if (pix_x < 0 || pix_x >= resolution.x || pix_y < 0 || pix_y >= resolution.y) continue; // skip out of bound coordinates
+            //if (pix_x < 0 || pix_x >= resolution.x || pix_y < 0 || pix_y >= resolution.y) continue; // skip out of bound coordinates
+            // Clamp to edges
+            if (pix_x < 0) pix_x = 0;
+            else if (pix_x >= resolution.x) pix_x = resolution.x - 1;
+            if (pix_y < 0) pix_y = 0;
+            else if (pix_y >= resolution.y) pix_y = resolution.y - 1;
 
             int pix_idx = pix_x + (pix_y * resolution.x);
 
             // Compute c_w
-            float d_x = denoisedInput[index].x;
-            float d_y = denoisedInput[index].y;
-            float d_z = denoisedInput[index].z;
-            float dp_x = denoisedInput[pix_idx].x;
-            float dp_y = denoisedInput[pix_idx].y;
-            float dp_z = denoisedInput[pix_idx].z;
-            glm::vec3 diff = glm::vec3(d_x, d_y, d_z) - glm::vec3(dp_x, dp_y, dp_z);
+            glm::vec3 diff = denoisedInput[index] - denoisedInput[pix_idx];
             float len = glm::dot(diff, diff);
             float c_w = glm::min(glm::exp(-(len) / cPhi), 1.f);
 
             // Compute n_w
             diff = gBuffer[index].nor - gBuffer[pix_idx].nor;
-            len = glm::dot(diff, diff) / (stepWidth * stepWidth);
+            len = glm::dot(diff, diff);
             float n_w = glm::min(glm::exp(-(len) / nPhi), 1.f);
 
             // Compute p_w
@@ -423,7 +422,7 @@ __global__ void computeDenoisedImage(
             float p_w = glm::min(glm::exp(-(len) / pPhi), 1.f);
 
             // weight
-            float w = c_w * n_w * p_w;
+            float w = c_w* n_w* p_w;
             colorSum += denoisedInput[pix_idx] * w * kernel[i];
             weightSum += w * kernel[i];
 
@@ -569,7 +568,7 @@ void denoiseImage(int num_iters, float c_phi, float n_phi, float p_phi) {
                 hst_filter.size(),
                 dev_filter,
                 dev_offset,
-                c_phi,
+                c_phi * glm::pow(2, -i),
                 p_phi,
                 n_phi,
                 glm::pow(2, i),

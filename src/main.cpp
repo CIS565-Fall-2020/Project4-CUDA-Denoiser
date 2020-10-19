@@ -178,11 +178,11 @@ void runCuda() {
         if (!denoise_computed) {
             // compute denoised image from current buffers
             // use blur width to determine number of denoise iterations (assume filter dim is 5x5)
-            int denoise_iter = 1;
+            int denoise_iter = 0;
             int max_width = 5; // replace this later with a variable
-            while (max_width < ui_filterSize) {
-                max_width += (int)glm::pow(2, denoise_iter + 1);
+            while (max_width <= ui_filterSize) {
                 denoise_iter++;
+                max_width += (int)glm::pow(2, denoise_iter + 1);
             }
             // denoise the image
             denoiseImage(denoise_iter, ui_colorWeight, ui_normalWeight, ui_positionWeight);
