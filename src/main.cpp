@@ -24,10 +24,15 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
+bool lastDenoise = false;
 int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
+int lastFilterSize = 80;
+float ui_colorWeight = 2.f;
+float lastcolorWeight = 2.f;
 float ui_normalWeight = 0.35f;
+float lastnormalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
+float lastpositionWeight = 0.2f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -120,13 +125,27 @@ void saveImage() {
     //img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
-void runCuda() {
-    if (lastLoopIterations != ui_iterations) {
-      lastLoopIterations = ui_iterations;
-      camchanged = true;
+bool sceneShouldUpdate() {
+    if (lastLoopIterations != ui_iterations ||
+        lastDenoise != ui_denoise ||
+        lastFilterSize != ui_filterSize ||
+        lastcolorWeight != ui_colorWeight ||
+        lastnormalWeight != ui_normalWeight ||
+        lastpositionWeight != ui_positionWeight) {
+        lastDenoise = ui_denoise;
+        lastFilterSize = ui_filterSize;
+        lastcolorWeight = ui_colorWeight;
+        lastnormalWeight = ui_normalWeight;
+        lastpositionWeight = ui_positionWeight;
+        lastLoopIterations = ui_iterations;
+        camchanged = true;
+        return true;
     }
+    return false;
+}
 
-    if (camchanged) {
+void runCuda() {
+    if (sceneShouldUpdate() || camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
@@ -162,7 +181,8 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_denoise, ui_filterSize, 
+            ui_colorWeight, ui_normalWeight, ui_positionWeight);
     }
 
     if (ui_showGbuffer) {
