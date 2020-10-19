@@ -170,7 +170,7 @@ void runCuda() {
 
     if (iteration == 0) {
         pathtraceFree();
-        pathtraceInit(scene);
+        pathtraceInit(scene, ui_filterSize);
     }
 
     uchar4 *pbo_dptr = NULL;

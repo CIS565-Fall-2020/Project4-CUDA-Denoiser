@@ -118,6 +118,32 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 	}
 }
 
+
+// Function to create Gaussian filter 
+void gaussianFilter(float *kernel, int kernelWidth)
+{
+	float sigma = 1.f;
+	float r = 0.f;
+	float s = 2.f * sigma * sigma;
+
+	// sum is for normalization
+	float sum = 0.f;
+	int kWHalf = kernelWidth / 2;
+
+	for (int y = -kWHalf; y <= kWHalf; y++) {
+		for (int x = -kWHalf; x <= kWHalf; x++) {
+			r = sqrt(x * x + y * y);
+			kernel[(x + kWHalf) + (y + kWHalf) * kernelWidth] = (exp(-(r * r) / s)) / (PI * s);
+			sum += kernel[(x + kWHalf) + (y + kWHalf) * kernelWidth];
+		}
+	}
+
+	// normalising the Kernel 
+	for (int i = 0; i < kernelWidth; ++i)
+		for (int j = 0; j < kernelWidth; ++j)
+			kernel[i][j] /= sum;
+}
+
 static Scene* hst_scene = NULL;
 static glm::vec3* dev_image = NULL;
 static glm::vec3* dev_bufferImage = NULL;
@@ -129,14 +155,20 @@ static GBufferPixel* dev_gBuffer = NULL;
 static glm::ivec2* dev_offset = NULL;
 static float* dev_kernel = NULL;
 static int lvlimit = 0;
-static int kernelWidth = 0;
+static int kernelWidth = 0;	// guaranteed to be odd
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
-void pathtraceInit(Scene* scene) {
+void pathtraceInit(Scene* scene, int kernelSize) {
 	hst_scene = scene;
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
+
+	// convert all even sized kernels into odd sized kernels so
+	// that they have a definite center
+	kernelWidth = kernelSize;
+	if (!(kernelWidth % 2))
+		kernelWidth--;
 
 	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
@@ -194,6 +226,8 @@ void pathtraceFree() {
 	cudaFree(dev_gBuffer);
 	// TODO: clean up any extra device memory you created
 	cudaFree(dev_bufferImage);
+	cudaFree(dev_offset);
+	cudaFree(dev_kernel);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -574,8 +608,11 @@ void pathtrace(int frame, int iter, bool denoise, float c_phi, float n_phi, floa
 	// call denoise here (2-D)
 	if (denoise) {
 		for (int stepWidth = 1; stepWidth <= (1 << lvlimit); stepWidth = stepWidth << 1) {
+			// i need a ping pong buffer. i will read from the image to get color values and then write to a different buffer
+			// this is necessary because all threads are reading and writing to the buffer right now
 			// std::cout << stepWidth << std::endl;
 			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image, c_phi, n_phi, p_phi);
+			// cudaDeviceSynchronize();
 			checkCUDAError("denoise");
 		}
 	}
