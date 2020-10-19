@@ -120,7 +120,7 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
 
 // Function to create Gaussian filter 
-void gaussianFilter(float *kernel, int kernelWidth)
+void gaussianFilter(std::vector<float> kernel, int kernelWidth)
 {
 	float sigma = 1.f;
 	float r = 0.f;
@@ -139,9 +139,9 @@ void gaussianFilter(float *kernel, int kernelWidth)
 	}
 
 	// normalising the Kernel 
-	for (int i = 0; i < kernelWidth; ++i)
-		for (int j = 0; j < kernelWidth; ++j)
-			kernel[i][j] /= sum;
+	for (int j = 0; j < kernelWidth; ++j)
+		for (int i = 0; i < kernelWidth; ++i)
+			kernel[(i + kWHalf) + (j + kWHalf) * kernelWidth] /= sum;
 }
 
 static Scene* hst_scene = NULL;
@@ -206,10 +206,12 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 	cudaMemcpy(dev_offset, offset.data(), kernelWidth * kernelWidth * sizeof(glm::ivec2), cudaMemcpyHostToDevice);
 
 	std::vector<float> kernel(kernelWidth * kernelWidth);
-	//kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
-	//for (int i = 0; i < kernelWidth * kernelWidth; i++)
-	//	kernel.at(i) = kernel.at(i) / 273.f;
-	kernel = { 0.003765, 0.015019, 0.023792, 0.015019, 0.003765, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.023792, 0.094907, 0.150342, 0.094907, 0.023792, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.003765, 0.015019, 0.023792, 0.015019, 0.003765 };
+	// kernel = { 1.f, 4.f, 7.f, 4.f, 1.f, 4.f, 16.f, 26.f, 16.f, 4.f, 7.f, 26.f, 41.f, 26.f, 7.f, 4.f, 16.f, 26.f, 16.f, 4.f, 1.f, 4.f, 7.f, 4.f, 1.f };
+	// for (int i = 0; i < kernelWidth * kernelWidth; i++)
+	// kernel.at(i) = kernel.at(i) / 273.f;
+	// kernel = { 0.003765, 0.015019, 0.023792, 0.015019, 0.003765, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.023792, 0.094907, 0.150342, 0.094907, 0.023792, 0.015019, 0.059912, 0.094907, 0.059912, 0.015019, 0.003765, 0.015019, 0.023792, 0.015019, 0.003765 };
+
+	gaussianFilter(kernel, kernelWidth);
 
 	cudaMalloc(&dev_kernel, kernelWidth * kernelWidth * sizeof(float));
 	cudaMemcpy(dev_kernel, kernel.data(), kernelWidth * kernelWidth * sizeof(float), cudaMemcpyHostToDevice);
