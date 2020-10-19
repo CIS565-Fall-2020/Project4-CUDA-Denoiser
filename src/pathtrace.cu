@@ -16,7 +16,7 @@
 #include "device_launch_parameters.h"
 
 #define ERRORCHECK 1
-#define visualizePositions true
+#define visualizePositions false
 #define useBufferWeights true
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
