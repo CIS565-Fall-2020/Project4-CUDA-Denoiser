@@ -1,10 +1,105 @@
-CUDA Path Tracer
+CUDA Path Tracer & Denoiser
 ================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3 & 4**
 
 * Xuanyi Zhou
 * Tested on: Windows 10, i7-9750H @ 2.60GHz 32GB, RTX 2060 6GB
+
+![](img/atrous/disney/denoised.png)
+
+Denoised 16 samples per pixel image.
+
+![](img/atrous/disney/full.png)
+
+Original 16 samples per pixel image.
+
+## Separation of Direct and Indirect Illumination
+
+![](img/atrous/disney/direct.png)
+
+Direct illumination, 16 samples per pixel.
+
+![](img/atrous/disney/indirect.png)
+
+Indirect illumination, 16 samples per pixel.
+
+The path tracer has been modified to output direct and indirect illumination separately. As can be seen from the two images above, indirect illumination contains much more noise that direct illumination. Therefore, to reduce the amount of blurring, only indirect illumination is denoised.
+
+One downside of this naive separation is that glossy and specular reflections are also considered indirect illumination. Although it's handled as a special case for specular reflection and specular transmission materials, specular reflections of objects using Disney materials are still filtered.
+
+## Variance-Guided Filtering
+
+![](img/atrous/disney/directVar.png)
+
+Variance of direct illumination, raised to the power of 0.3.
+
+![](img/atrous/disney/indirectVar.png)
+
+Variance of indirect illumination, raised to the power of 0.3.
+
+The path tracer is modified to collect variance information for both direct and indirect illumination. An example of collected variance can be seen in the images above. The majority of variance in direct illumination is caused by multiple importance sampling. While the amount of variance is roughly the same for direct and indirect illumination, it's worth noting that indirect illumination is a lot weaker than direct illumination. Therefore, indirect illumination has a much lower signal-to-noise ratio. Pixels with high variance in indirect illumination also corresponds perfectly with fireflies. This information is used to drive the color weight in A-Trous filtering in a fashion similar to that of Spatiotemporal Variance-Guided Filtering.
+
+## Performance Analysis
+
+- Denoising drastically lowers the amount of samples needed to achieve an acceptably smooth result, with the cost of overly-smoothed high-frequency details. This is ultimately a trade-off between computation time and loss of detail.
+
+- Although A-Trous filtering is resolution-dependent, it is not dependent on scene geometry; that is, its execution time stays the same for arbitrarily complex scenes (with the exception of G-buffer generation). Also since it's parallelized using the GPU, its execution time is not proportional to the number of pixels.
+
+- Denoising is the least effective with specular materials since it overly blurs the reflections. It's also not very effective to apply it to diffuse materials since they're already well sampled and does not contain much noise, but it does eliminate fireflies caused by nearby specular materials. It's most effective when used on glossy materials since it removes noise in the reflections, but does not blur it excessively as glossy reflections are blurry by themselves.
+
+- Since the implementation uses 5 iterations of A-Trous filtering regardless of the filter size, the impact of filter size on performance is minimal. Smaller filter sizes result in less blurring, but run the risk of leaving bright spots in the result.
+
+![](img/atrous/disney/denoised.10.png)
+
+Filter size = 10. Note the obvious bright spots in the image.
+
+![](img/atrous/disney/denoised.20.png)
+
+Filter size = 20.
+
+![](img/atrous/disney/denoised.40.png)
+
+Filter size = 40. Note the additional blurring of the reflections on the specular golden sphere.
+
+## Gallery
+
+![](img/atrous/ani/full.png)
+
+Forest scene, 16 samples per pixel.
+
+![](img/atrous/ani/direct.png)
+
+Direct illumination in the forest scene.
+
+![](img/atrous/ani/indirect.png)
+
+Indirect illumination in the forest scene.
+
+![](img/atrous/ani/denoised.png)
+
+Forest scene, 16 samples per pixels, with aggressive denoising. Note that while the noise on the bottom of the pond is completely removed, aggressive denoising also completely filters away the reflection of sunlight onto the frog, its reflection on the stone, and the caustics around its glasses. With lighter denoising "stars" would start to appear on the bottom of the water.
+
+-----------------------
+
+![](img/atrous/water/full.png)
+
+Water scene, 16 samples per pixel.
+
+![](img/atrous/water/direct.png)
+
+Direct illumination in the water scene.
+
+![](img/atrous/water/indirect.png)
+
+Indirect illumination in the water scene. A large part of the scene is lit by indirect illumination.
+
+![](img/atrous/water/denoised.png)
+
+Denoised water scene, 16 samples per pixels. A satisfactory result is hard to obtain using such low sample count due to the complex geometry and light transport in the scene, and the wide usage of glossy materials. The direct illumination of this scene also contains a lot of noise due to the large size of the light source.
+
+Project 3: Path Tracer
+=========
 
 ![](img/disney2Dof.png)
 
@@ -62,6 +157,6 @@ This feature does not benefit from being implemented on the GPU besides the para
 
 ![](img/realtime.gif)
 
-Stratified sampling is used to speed up convergence. This feature does not benefit from being implemented on the GPU besides the parallelism. In order for this method to be feasible on the GPU, instead of generating sample individually for each pixel, a series of sample pools are generated by generating and shuffling an array of stratified grid indices. One pool is generated for each of the three samples of each iteration, and threads simply go through these samples. Samples for subpixel positions, depth of field, and light sampling are generated similarly.
+Stratified sampling is used to speed up convergence. In order for this method to be feasible on the GPU, instead of generating samples individually for each pixel, a series of sample pools are generated by generating and shuffling arrays of stratified grid indices. One pool is generated for each of the three samples of each iteration, and threads simply go through these samples. Samples for subpixel positions, depth of field, and light sampling are generated similarly.
 
 This feature does not benefit from being implemented on the GPU besides the parallelism. Thanks to the usage of unified sample pools, its performance impact is minimal.

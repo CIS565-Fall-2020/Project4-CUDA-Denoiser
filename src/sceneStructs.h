@@ -100,12 +100,13 @@ struct RenderState {
 };
 
 struct PathSegment {
-	glm::vec3 colorThroughput, colorAccum;
+	glm::vec3 colorThroughput, directAccum, indirectAccum;
 	Ray ray;
 	int pixelIndex;
 	int lastGeom;
 	int16_t remainingBounces;
 	bool prevBounceNoMis;
+	bool indirectIllum;
 };
 
 // Use with a corresponding PathSegment to do:

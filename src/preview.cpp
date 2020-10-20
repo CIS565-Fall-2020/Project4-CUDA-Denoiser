@@ -195,7 +195,7 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::NewFrame();
 
     // Dear imgui define
-    ImVec2 minSize(300.f, 300.f);
+    ImVec2 minSize(300.f, 100.f);
     ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.5);
     ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
 
@@ -213,10 +213,19 @@ void drawGui(int windowWidth, int windowHeight) {
     if (ImGui::Button("Restart Rendering")) {
         restartRendering();
     }
-    ImGui::SliderInt("Limit Samples", &ui_limitSamples, 0, 100);
+    ImGui::InputInt("Limit Samples", &ui_limitSamples);
 
 	{
-		const char *previewItems[] = { "Accumulated Color", "World Normal", "World Position", "Filtered Color" };
+		const char *previewItems[] = {
+            "Direct Illumination",
+            "Direct Illumination Variance",
+            "Indirect Illumination",
+            "Indirect Illumination Variance",
+            "Full Illumination",
+            "World Normal",
+            "World Position",
+            "Filtered Color"
+        };
 		ImGui::Combo("Visualize Buffer", &ui_previewBuffer, previewItems, IM_ARRAYSIZE(previewItems));
 	}
     if (ImGui::Button("Save Image")) {

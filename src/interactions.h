@@ -365,7 +365,7 @@ __host__ __device__ float powerHeuristic(float pdf1, float pdf2) {
 }
 __host__ __device__ void multipleImportanceSampling(
 	PathSegment &path, glm::vec3 intersect, glm::vec3 geomNormal, glm::vec3 shadeNormal, const Material &m,
-	glm::vec2 rand1, glm::vec2 rand2, int geomId, int numMisLights,
+	glm::vec2 rand1, glm::vec2 rand2, int geomId, int numMisLights, bool isIndirect,
 	const Geom *geoms, const Material *mats, const AABBTreeNode *tree, int treeRoot
 ) {
 	if (m.type == MaterialType::emissive) {
@@ -433,7 +433,12 @@ __host__ __device__ void multipleImportanceSampling(
 		lteBsdf *= powerHeuristic(bsdfPdfBsdf, lightPdfBsdf);
 	}
 
-	path.colorAccum += path.colorThroughput * static_cast<float>(numMisLights) * (lteLight + lteBsdf);
+	glm::vec3 accumVal = path.colorThroughput * static_cast<float>(numMisLights) * (lteLight + lteBsdf);
+	if (isIndirect) {
+		path.indirectAccum += accumVal;
+	} else {
+		path.directAccum += accumVal;
+	}
 }
 
 /**
@@ -464,13 +469,17 @@ __host__ __device__ void multipleImportanceSampling(
 __host__ __device__ void scatterRay(
 	PathSegment &path, glm::vec3 intersect,
 	glm::vec3 geomNormal, glm::vec3 shadeNormal, const Material &m,
-	glm::vec2 rand, bool includeDirectLighting
+	glm::vec2 rand, bool includeDirectLighting, bool isIndirect
 ) {
 	path.ray.origin = intersect;
 
 	if (m.type == MaterialType::emissive) {
 		if (includeDirectLighting || m.emitterNoMis || path.prevBounceNoMis) {
-			path.colorAccum += m.baseColorLinear * path.colorThroughput;
+			if (isIndirect) {
+				path.indirectAccum += m.baseColorLinear * path.colorThroughput;
+			} else {
+				path.directAccum += m.baseColorLinear * path.colorThroughput;
+			}
 		}
 		path.remainingBounces = 0;
 	} else {

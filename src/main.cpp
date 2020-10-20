@@ -10,7 +10,7 @@
 #include "pathtrace.h"
 
 
-constexpr std::size_t log2SqrtNumStratifiedSamples = 5;
+constexpr std::size_t log2SqrtNumStratifiedSamples = 2;
 constexpr std::size_t sqrtNumStratifiedSamples = 1 << log2SqrtNumStratifiedSamples;
 constexpr std::size_t numStratifiedSamples = sqrtNumStratifiedSamples * sqrtNumStratifiedSamples;
 
@@ -26,9 +26,9 @@ static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
 
-int ui_previewBuffer = static_cast<int>(BufferType::AccumulatedColor);
-extern bool ui_pauseRendering = false;
-extern int ui_limitSamples = 0;
+int ui_previewBuffer = static_cast<int>(BufferType::FullIllumination);
+bool ui_pauseRendering = false;
+int ui_limitSamples = 0;
 
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
@@ -141,8 +141,20 @@ void saveImage(BufferType type) {
     std::ostringstream ss;
     ss << filename << "." << startTimeString << "." << samples << "samp" << ".";
     switch (static_cast<BufferType>(ui_previewBuffer)) {
-    case BufferType::AccumulatedColor:
-        ss << "raw";
+    case BufferType::DirectIllumination:
+        ss << "direct";
+        break;
+    case BufferType::DirectIlluminationVariance:
+        ss << "directVar";
+        break;
+    case BufferType::IndirectIllumination:
+        ss << "indirect";
+        break;
+    case BufferType::IndirectIlluminationVariance:
+        ss << "indirectVar";
+        break;
+    case BufferType::FullIllumination:
+        ss << "full";
         break;
     case BufferType::Normal:
         ss << "norm";

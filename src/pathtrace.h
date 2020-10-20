@@ -5,7 +5,11 @@
 #include "utilities.h"
 
 enum class BufferType {
-	AccumulatedColor,
+	DirectIllumination,
+	DirectIlluminationVariance,
+	IndirectIllumination,
+	IndirectIlluminationVariance,
+	FullIllumination,
 	Normal,
 	Position,
 	FilteredColor
