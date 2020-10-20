@@ -15,6 +15,8 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
+#define VISUALIZE_POS 0
+#define DEBUG 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -76,9 +78,25 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
         float timeToIntersect = gBuffer[index].t * 256.0;
 
         pbo[index].w = 0;
+        /* GIVEN DUMMY GBUFFER
         pbo[index].x = timeToIntersect;
         pbo[index].y = timeToIntersect;
         pbo[index].z = timeToIntersect;
+        */
+
+        // this is to display the normals gbuffer
+        glm::vec3 temp_nor = glm::normalize(glm::abs(gBuffer[index].nor)) * 255.f;
+        pbo[index].x = temp_nor[0];
+        pbo[index].y = temp_nor[1];
+        pbo[index].z = temp_nor[2];
+
+        // this is to display the position gbuffer
+#if VISUALIZE_POS
+        glm::vec3 temp_pos = glm::clamp(glm::abs(gBuffer[index].pos * 28.f), 0.f, 255.f);
+        pbo[index].x = temp_pos[0];
+        pbo[index].y = temp_pos[1];
+        pbo[index].z = temp_pos[2];
+#endif
     }
 }
 
@@ -91,6 +109,8 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static glm::vec3* dev_image_swap = NULL; // this is the buffer we need to write noised pixel data 
+static glm::vec3* dev_image_raw = NULL; // this is the buffer that holds the raw raytraced results of each iteration
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -114,6 +134,11 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+    cudaMalloc(&dev_image_swap, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_swap, 0, pixelcount * sizeof(glm::vec3));
+    
+    cudaMalloc(&dev_image_raw, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_raw, 0, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -126,7 +151,8 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
-
+    cudaFree(dev_image_swap);
+    cudaFree(dev_image_raw);
     checkCUDAError("pathtraceFree");
 }
 
@@ -221,6 +247,7 @@ __global__ void computeIntersections(
 			intersections[path_index].t = t_min;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
 			intersections[path_index].surfaceNormal = normal;
+            intersections[path_index].position = intersect_point;
 		}
 	}
 }
@@ -282,6 +309,8 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
+    gBuffer[idx].nor = shadeableIntersections[idx].surfaceNormal;
+    gBuffer[idx].pos = shadeableIntersections[idx].position;
   }
 }
 
@@ -297,11 +326,170 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	}
 }
 
+// Add the current iteration's output to a tempimage
+__global__ void tempGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+{
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+    if (index < nPaths)
+    {
+        PathSegment iterationPath = iterationPaths[index];
+        image[iterationPath.pixelIndex] = iterationPath.color;
+    }
+}
+
+// Add the denoised result from this iteration to the overall image 
+__global__ void finalDenoiseGather(glm::vec3* img_denoised, glm::vec3* img_overall, Camera cam) {
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    if (x < cam.resolution.x && y < cam.resolution.y) {
+        int index = x + (y * cam.resolution.x);
+        img_overall[index] += img_denoised[index];
+    }
+}
+
+// A-Trous filter 
+__global__ void atrous_filter(
+    glm::vec3* img_raw,
+    glm::vec3* img_swap,
+    GBufferPixel* gBuffer,
+    Camera cam,
+    float color_weight,
+    float nor_weight, 
+    float pos_weight,
+    int step_width
+) {
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    if (x < cam.resolution.x && y < cam.resolution.y) {
+        int index = x + (y * cam.resolution.x);
+        // given to us on the top of page 4
+        float kernel[5] = { 1.0 / 16.0, 
+                       1.0 / 4.0, 
+                       3.0 / 8.0, 
+                       1.0 / 4.0, 
+                       1.0 / 16.0 };
+        // we need to initialize the variables as seen in the sample code
+        glm::vec3 sum = glm::vec3(0.f);
+        glm::vec3 cval = img_raw[index];
+        glm::vec3 nval = gBuffer[index].nor;
+        glm::vec3 pval = gBuffer[index].pos;
+
+        float cum_w = 0.f;
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                glm::ivec2 uv = glm::ivec2(x + (i - 2) * step_width,
+                                           y + (j - 2) * step_width);
+                uv = glm::clamp(uv, glm::ivec2(0, 0), cam.resolution - glm::ivec2(1, 1));
+                int uv_1d = uv.x + (uv.y * cam.resolution.x);
+                
+                // calculate color weight of original image
+                glm::vec3 ctmp = img_raw[uv_1d];
+                glm::vec3 t = (cval - ctmp);
+                float dist2 = glm::dot(t, t);
+                float c_w = glm::min(glm::exp(-(dist2) / color_weight), 1.f);
+
+                // calculate normal weight based on gbuffer
+                glm::vec3 ntmp = gBuffer[uv_1d].nor;
+                t = nval - ntmp;
+                dist2 = glm::max(glm::dot(t, t) / (step_width * step_width), 0.f);
+                float n_w = glm::min(glm::exp(-(dist2) / nor_weight), 1.f);
+
+                // calculate the position weight based on gbuffer
+                glm::vec3 ptmp = gBuffer[uv_1d].pos;
+                t = pval - ptmp;
+                dist2 = glm::dot(t, t);
+                float p_w = glm::min(glm::exp(-(dist2) / pos_weight), 1.f);
+                
+                float weight = c_w * n_w * p_w; // combine them to essentially do edge detection
+                sum += ctmp * weight * kernel[i] * kernel[j];
+                cum_w += weight * kernel[i] * kernel[j];
+            }
+        }
+        img_swap[index] = sum / cum_w;
+    }
+}
+
+//if denoising, run kernels that take both the raw pathtraced result
+//and the gbuffer, and put the result in the "pbo" from opengl
+void denoise_filter(int iter, int ui_filterSize, float ui_colorWeight,
+    float ui_normalWeight, float ui_positionWeight) {
+#if DEBUG
+    cout << "calling denoise filter on iteration: " << iter << endl;
+#endif
+    // Do similar set up as pathtrace() ====================
+    const Camera& cam = hst_scene->state.camera;
+
+    // 2D block for generating ray from camera (or in this case, the filter)
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d(
+        (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+        (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+    // end of set up =======================================
+
+    // Writing out thought process: 
+    // We need a kernel that takes in 
+    //    1) The image buffer with all teh info post path tracing
+    //    2) A pingpong buffer according to Piazza post @212, since we can't read and write to same buffer
+    //    3) Gbuffer with the nor and pos
+    //    4) Weights specified in UI (c_phi, n_phi, p_phi)
+    //    5) step width
+    //    6) the b spline interpolation kernel (h)
+    // This kernel is called in the same way as generate ray from camera... aka a 2d grid
+    // .... Need to also pass in camera to do checks
+    // .... I guess we could also do a 1d grid but... 2d makes more sense
+    // We also need need to double the step width every time, as seen in the recitation slides
+    // The point of this kernel is to repeatedly sample from more distant neighbors and adding them 
+    // into your current pixel, creating a blur. We need the weights to factor in the edges. 
+
+    int step_width = 1; // we start by sampling the pixels immediately next to you
+    float color_weight = ui_colorWeight;
+
+    // To get number of iterations, we have to take the filter size and / 2. 
+    // This gives us the number of pixels on either side. 
+    // then we divide by 2 again, because in a 5x5, there are 2 pixels on either side. 
+    // we then take the logbase2 of that to get # iterations
+    int blur_iterations = ceil(glm::log2((ui_filterSize) / 4.f));
+#if DEBUG 
+    cout << "number of blur iterations: " << blur_iterations << endl;
+#endif 
+
+    for (int i = 0; i < blur_iterations; i++) {
+        atrous_filter << <blocksPerGrid2d, blockSize2d >> > (
+            dev_image_raw,
+            dev_image_swap,
+            dev_gBuffer,
+            cam,
+            color_weight,
+            ui_normalWeight, 
+            ui_positionWeight,
+            step_width
+            );
+
+        // double the step width every time. This is seen from Figure 3 of the paper.
+        step_width *= 2;
+        // also seen in recitation slides, the outer pixels weight half as less.
+        color_weight *= 0.5f;
+
+        // the denoised result is in dev_image_swap, because we are writing to there in the kernel above
+        // we need to read from dev_image_raw, so we will swap the two
+        std::swap(dev_image_raw, dev_image_swap); // pingpong the buffers back and forth
+    }
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter) {
+void pathtrace(int frame, int iter, bool denoise, 
+    int ui_filterSize, float ui_colorWeight,
+    float ui_normalWeight, float ui_positionWeight) {
+#if DEBUG
+    cout << "calling path trace on iteration: " << iter << endl;
+#endif
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -396,7 +584,18 @@ void pathtrace(int frame, int iter) {
 
   // Assemble this iteration and apply it to the image
   dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+  //     * if not denoising, add this iteration's results to the image
+  if (!denoise) {
+      finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image, dev_paths);
+  }
+  //     * if denoising, run kernels that take both the raw pathtraced result and the gbuffer, 
+  //       and put the result in the "pbo" from opengl
+  else {
+      tempGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image_raw, dev_paths);
+      denoise_filter(iter, ui_filterSize, ui_colorWeight,
+          ui_normalWeight, ui_positionWeight);
+      finalDenoiseGather << <blocksPerGrid2d, blockSize2d >> > (dev_image_raw, dev_image, cam);
+  }
 
     ///////////////////////////////////////////////////////////////////////////
 

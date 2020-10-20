@@ -6,6 +6,8 @@
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
 
+#define TIMER 1
+
 static std::string startTimeString;
 
 // For camera controls
@@ -24,11 +26,18 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+bool lastDenoise = false;
+int ui_filterSize = 128;
+int lastFilterSize = 128;
+float ui_colorWeight = 3.428f;
+float lastcolorWeight = 3.428f;
+float ui_normalWeight = 0.005f;
+float lastnormalWeight = 0.005f;
+float ui_positionWeight = 0.191f;
+float lastpositionWeight = 0.191f;
 bool ui_saveAndExit = false;
+
+float total_time = 0.f;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -120,13 +129,35 @@ void saveImage() {
     //img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
-void runCuda() {
-    if (lastLoopIterations != ui_iterations) {
-      lastLoopIterations = ui_iterations;
-      camchanged = true;
+bool sceneShouldUpdate() {
+    if (lastLoopIterations != ui_iterations ||
+        lastDenoise != ui_denoise ||
+        lastFilterSize != ui_filterSize ||
+        lastcolorWeight != ui_colorWeight ||
+        lastnormalWeight != ui_normalWeight ||
+        lastpositionWeight != ui_positionWeight) {
+        lastDenoise = ui_denoise;
+        lastFilterSize = ui_filterSize;
+        lastcolorWeight = ui_colorWeight;
+        lastnormalWeight = ui_normalWeight;
+        lastpositionWeight = ui_positionWeight;
+        lastLoopIterations = ui_iterations;
+        camchanged = true;
+        return true;
     }
+    return false;
+}
 
-    if (camchanged) {
+void runCuda() {
+
+#if TIMER
+    cudaEvent_t start;
+    cudaEventCreate(&start);
+    cudaEvent_t stop;
+    cudaEventCreate(&stop);
+#endif
+
+    if (sceneShouldUpdate() || camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
@@ -152,6 +183,7 @@ void runCuda() {
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+        total_time = 0.f;
     }
 
     uchar4 *pbo_dptr = NULL;
@@ -162,7 +194,30 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+
+#if TIMER
+        cudaEventRecord(start);
+#endif
+
+        pathtrace(frame, iteration, ui_denoise, ui_filterSize, 
+            ui_colorWeight, ui_normalWeight, ui_positionWeight);
+
+#if TIMER
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        float ms = 0.f;
+        cudaEventElapsedTime(&ms, start, stop);
+        total_time += ms;
+
+        if (iteration == ui_iterations) {
+            if (ui_denoise) {
+                cout << "Total Denoise Time: " << total_time << "ms for " << ui_iterations << " iterations" << endl;
+            }
+            else {
+                cout << "Total Time: " << total_time << "ms for " << ui_iterations << " iterations" << endl;
+            }
+        }
+#endif
     }
 
     if (ui_showGbuffer) {
