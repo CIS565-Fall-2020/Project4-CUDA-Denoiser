@@ -30,6 +30,7 @@ float ui_color_phi = 0.45f;
 float ui_normal_phi = 0.35f;
 float ui_position_phi = 0.2f;
 bool ui_saveAndExit = false;
+float avgerageTime = 0;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -164,13 +165,24 @@ void runCuda() {
 
 		// execute the kernel
 		int frame = 0;
+		std::chrono::high_resolution_clock::time_point timer_start = std::chrono::high_resolution_clock::now();
 		pathtrace(frame, iteration);
+		std::chrono::high_resolution_clock::time_point timer_end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> period = timer_end - timer_start;
+		float prev_cpu_time = static_cast<decltype(prev_cpu_time)>(period.count());
+		avgerageTime = (avgerageTime * (iteration - 1) + prev_cpu_time) / (iteration);
+		cout << "Iterations:" << iteration << ", Time: " << prev_cpu_time << ", Average Time" << avgerageTime << endl;
 
 	}
 	else if (iteration == ui_iterations)
 	{
 		if (ui_denoise) {
+			std::chrono::high_resolution_clock::time_point timer_start = std::chrono::high_resolution_clock::now();
 			denoise(iteration);
+			std::chrono::high_resolution_clock::time_point timer_end = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double, std::milli> period = timer_end - timer_start;
+			float prev_cpu_time = static_cast<decltype(prev_cpu_time)>(period.count());
+			cout << "Denoising cost:"  << prev_cpu_time  << endl;
 			ui_denoise_changed = false;
 		}
 	}
