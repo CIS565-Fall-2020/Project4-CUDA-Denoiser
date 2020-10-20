@@ -38,12 +38,42 @@ REFR        0
 REFRIOR     0
 EMITTANCE   0
 
-// Specular white
+// Specular blue
 MATERIAL 4
-RGB         .98 .98 .98
+RGB         .65 .65 .98
 SPECEX      0
-SPECRGB     .98 .98 .98
+SPECRGB     .65 .65 .98
 REFL        1
+REFR        0
+REFRIOR     0
+EMITTANCE   0
+
+// Fresnel magenta
+MATERIAL 5
+RGB         .98 .65 .98
+SPECEX      0
+SPECRGB     .98 .65 .98
+REFL        0
+REFR        1
+REFRIOR     2.5
+EMITTANCE   0
+
+// Glossy cyan
+MATERIAL 6
+RGB         .65 .98 .98
+SPECEX      7.5
+SPECRGB     .65 .98 .98
+REFL        1
+REFR        0
+REFRIOR     0
+EMITTANCE   0
+
+// Diffuse yellow
+MATERIAL 7
+RGB         .98 .98 .65
+SPECEX      0
+SPECRGB     .98 .98 .65
+REFL        0
 REFR        0
 REFRIOR     0
 EMITTANCE   0
@@ -55,7 +85,7 @@ FOVY        45
 ITERATIONS  10
 DEPTH       8
 FILE        cornell
-EYE         0.0 5 10.5
+EYE         0.0 5 9.5
 LOOKAT      0 5 0
 UP          0 1 0
 
@@ -66,7 +96,7 @@ cube
 material 0
 TRANS       0 10 0
 ROTAT       0 0 0
-SCALE       10 .3 10
+SCALE       20 .3 10
 
 // Floor
 OBJECT 1
@@ -74,7 +104,7 @@ cube
 material 1
 TRANS       0 0 0
 ROTAT       0 0 0
-SCALE       10 .01 10
+SCALE       20 .01 10
 
 // Ceiling
 OBJECT 2
@@ -90,13 +120,13 @@ cube
 material 1
 TRANS       0 5 -5
 ROTAT       0 90 0
-SCALE       .01 10 10
+SCALE       .01 10 20
 
 // Left wall
 OBJECT 4
 cube
 material 2
-TRANS       -5 5 0
+TRANS       -10 5 0
 ROTAT       0 0 0
 SCALE       .01 10 10
 
@@ -104,14 +134,38 @@ SCALE       .01 10 10
 OBJECT 5
 cube
 material 3
-TRANS       5 5 0
+TRANS       10 5 0
 ROTAT       0 0 0
 SCALE       .01 10 10
 
-// Sphere
+// Mirror Sphere
 OBJECT 6
 sphere
 material 4
-TRANS       -1 4 -1
+TRANS       -7.5 4 -2
+ROTAT       0 0 0
+SCALE       3 3 3
+
+// Diffuse Sphere
+OBJECT 7
+sphere
+material 7
+TRANS       -2.5 4 -2
+ROTAT       0 0 0
+SCALE       3 3 3
+
+// Fresnel Sphere
+OBJECT 8
+sphere
+material 5
+TRANS       2.5 4 -2
+ROTAT       0 0 0
+SCALE       3 3 3
+
+// Glossy Sphere
+OBJECT 9
+sphere
+material 6
+TRANS       7.5 4 -2
 ROTAT       0 0 0
 SCALE       3 3 3

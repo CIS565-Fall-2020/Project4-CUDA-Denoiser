@@ -40,8 +40,36 @@ glm::vec3 calculateRandomDirectionInHemisphere(
         + sin(around) * over * perpendicularDirection2;
 }
 
+/*
+* Computes sampled glossy reflection direction.
+*/
+__host__ __device__
+glm::vec3 calculateImperfectSpecularDirection(
+    glm::vec3 normal, float spec_exp, thrust::default_random_engine& rng) {
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    float theta = glm::acos(glm::pow(u01(rng), 1.f / (spec_exp + 1.f)));
+    float phi = TWO_PI * u01(rng);
+    glm::vec3 sample_dir(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+
+    // Compute tangent space
+    glm::vec3 tangent;
+    glm::vec3 bitangent;
+
+    if (glm::abs(normal.x) > glm::abs(normal.y)) {
+        tangent = glm::vec3(-normal.z, 0.f, normal.x) / glm::sqrt(normal.x * normal.x + normal.z * normal.z);
+    }
+    else {
+        tangent = glm::vec3(0, normal.z, -normal.y) / glm::vec3(normal.y * normal.y + normal.z * normal.z);
+    }
+    bitangent = glm::cross(normal, tangent);
+
+    // Transform sample from specular space to tangent space
+    glm::mat3 transform(tangent, bitangent, normal);
+    return glm::normalize(transform * sample_dir);
+}
+
 /**
- * Simple ray scattering with diffuse and perfect specular support.
+ * Simple ray scattering with diffuse, perfect specular, glossy and fresnel dielectric support.
  */
 __host__ __device__
 void scatterRay(
@@ -52,8 +80,43 @@ void scatterRay(
         thrust::default_random_engine &rng) {
     glm::vec3 newDirection;
     if (m.hasReflective) {
-        newDirection = glm::reflect(pathSegment.ray.direction, normal);
-    } else {
+        if (m.specular.exponent > 0.f) {
+            // Glossy
+            newDirection = calculateImperfectSpecularDirection(normal, m.specular.exponent, rng);
+        }
+        else {
+            // Mirror
+            newDirection = glm::reflect(pathSegment.ray.direction, normal);
+        }
+    }
+    else if (m.hasRefractive) {
+        // Fresnel
+        float cosine;
+        float reflect_prob;
+        bool entering = glm::dot(pathSegment.ray.direction, normal) < 0;
+        float etaI = entering ? 1.f : m.indexOfRefraction;
+        float etaT = entering ? m.indexOfRefraction : 1.f;
+        float eta = etaI / etaT;
+        cosine = entering ? -glm::dot(pathSegment.ray.direction, normal) / glm::length(pathSegment.ray.direction) :
+            m.indexOfRefraction * glm::dot(pathSegment.ray.direction, normal) / glm::length(pathSegment.ray.direction);
+        newDirection = glm::refract(pathSegment.ray.direction, normal, eta);
+        if (glm::length(newDirection) == 0.f) {
+            reflect_prob = 1.f;
+        }
+        else {
+            float R0 = (etaI - etaT) / (etaI + etaT);
+            R0 *= R0;
+            reflect_prob = R0 + (1.f - R0) * glm::pow(1.f - cosine, 5.f);
+        }
+
+        thrust::uniform_real_distribution<float> u01(0, 1);
+        float prob = u01(rng);
+        if (prob < reflect_prob) {
+            newDirection = glm::reflect(pathSegment.ray.direction, normal);
+        }
+    } 
+    else {
+        // Diffuse
         newDirection = calculateRandomDirectionInHemisphere(normal, rng);
     }
 
