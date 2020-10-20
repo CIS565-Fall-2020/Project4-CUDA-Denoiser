@@ -32,6 +32,7 @@ extern int iteration;
 extern int width;
 extern int height;
 
+//HW04 
 extern int ui_iterations;
 extern int startupIterations;
 extern bool ui_showGbuffer;
