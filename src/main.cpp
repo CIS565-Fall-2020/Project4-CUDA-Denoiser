@@ -3,6 +3,11 @@
 #include <cstring>
 #include <chrono>
 
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_glfw.h"
+#include "../imgui/imgui_impl_opengl3.h"
+
+
 // Jacky added
 #define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
 #include "tiny_obj_loader.h"
@@ -17,6 +22,17 @@ static bool rightMousePressed = false;
 static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
+
+int ui_iterations = 0;
+int startupIterations = 0;
+int lastLoopIterations = 0;
+bool ui_showGbuffer = false;
+bool ui_denoise = false;
+int ui_filterSize = 200;
+float ui_colorWeight = 0.572f;
+float ui_normalWeight = 0.021f;
+float ui_positionWeight = 0.789f;
+bool ui_saveAndExit = false;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -83,7 +99,7 @@ int main(int argc, char** argv) {
     Geom newGeom;
     newGeom.type = MESH;
     newGeom.materialid = 6;
-    scene->geoms.push_back(newGeom);
+    scene->geoms.push_back(newGeom); // Comment this line if don't want to load obj
 
     glm::vec3 minCorner(FLT_MAX);
     glm::vec3 maxCorner(FLT_MIN);
@@ -137,6 +153,9 @@ int main(int argc, char** argv) {
     width = cam.resolution.x;
     height = cam.resolution.y;
 
+    ui_iterations = renderState->iterations;
+    startupIterations = ui_iterations;
+
     glm::vec3 view = cam.view;
     glm::vec3 up = cam.up;
     glm::vec3 right = glm::cross(view, up);
@@ -186,6 +205,11 @@ void saveImage() {
 }
 
 void runCuda() {
+    if (lastLoopIterations != ui_iterations) {
+        lastLoopIterations = ui_iterations;
+        camchanged = true;
+    }
+
     if (camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
@@ -217,26 +241,37 @@ void runCuda() {
         pathtraceInit(scene, vertices, normals, numVertices, meshBB);
 
         // Jacky added code for timing purposes
-        startTime = std::chrono::high_resolution_clock::now();
+        // startTime = std::chrono::high_resolution_clock::now();
     }
 
-    if (iteration < renderState->iterations) {
-        uchar4 *pbo_dptr = NULL;
+    uchar4* pbo_dptr = NULL;
+    cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+
+    if (iteration < ui_iterations) {
         iteration++;
-        cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
         // execute the kernel
         int frame = 0;
-        pathtrace(pbo_dptr, frame, iteration, renderState->iterations);
+        // pathtrace(pbo_dptr, frame, iteration, renderState->iterations);
+        pathtrace(frame, iteration, renderState->iterations);
+    }
 
-        // unmap buffer object
-        cudaGLUnmapBufferObject(pbo);
-    } else {
-        // Jacky added code for timing purposes
-        endTime = std::chrono::high_resolution_clock::now();
-        std::cout << "Time Duration: " <<
-            std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count() << std::endl;
+    if (ui_showGbuffer) {
+        showGBuffer(pbo_dptr);
+    }
+    else {
+        if (ui_denoise) {
+            showDenoise(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+        }
+        else {
+            showImage(pbo_dptr, iteration);
+        }
+    }
 
+    // unmap buffer object
+    cudaGLUnmapBufferObject(pbo);
+
+    if (ui_saveAndExit) {
         saveImage();
         pathtraceFree();
         cudaDeviceReset();
@@ -265,6 +300,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+  if (ImGui::GetIO().WantCaptureMouse) return;
   leftMousePressed = (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS);
   rightMousePressed = (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS);
   middleMousePressed = (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS);
