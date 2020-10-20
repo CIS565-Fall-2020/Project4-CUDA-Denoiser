@@ -33,6 +33,7 @@ float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
 int cur_gbuffer = 0;
 bool denoise_computed = false;
+int denoised_iteration = 0;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -106,22 +107,38 @@ void saveImage() {
     // output image file
     image img(width, height);
 
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            int index = x + (y * width);
-            glm::vec3 pix = renderState->image[index];
-            img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+    if (ui_denoise) {
+        std::vector<glm::vec3> denoised = getDenoisedImage();
+        samples = denoised_iteration;
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int index = x + (y * width);
+                glm::vec3 pix = denoised[index];
+                img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            }
         }
+
+        std::string filename = renderState->imageName;
+        std::ostringstream ss;
+        ss << filename << "." << startTimeString << "." << samples << "samp.denoised";
+        filename = ss.str();
+        img.savePNG(filename);
     }
+    else {
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int index = x + (y * width);
+                glm::vec3 pix = renderState->image[index];
+                img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            }
+        }
 
-    std::string filename = renderState->imageName;
-    std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
-    filename = ss.str();
-
-    // CHECKITOUT
-    img.savePNG(filename);
-    //img.saveHDR(filename);  // Save a Radiance HDR file
+        std::string filename = renderState->imageName;
+        std::ostringstream ss;
+        ss << filename << "." << startTimeString << "." << samples << "samp";
+        filename = ss.str();
+        img.savePNG(filename);
+    }
 }
 
 void runCuda() {
@@ -201,6 +218,7 @@ void runCuda() {
             // denoise the image
             denoiseImage(denoise_iter, ui_colorWeight, ui_normalWeight, ui_positionWeight);
             denoise_computed = true;
+            denoised_iteration = iteration;
         }
     }
     else {

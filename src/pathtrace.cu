@@ -194,6 +194,16 @@ void filterFree() {
     checkCUDAError("filterFree");
 }
 
+// Return denoised image result as a std::vector<glm::vec3>
+std::vector<glm::vec3> getDenoisedImage() {
+    std::vector<glm::vec3> denoise_res;
+    int pixelcount = hst_scene->state.camera.resolution.x * hst_scene->state.camera.resolution.y;
+    for (int i = 0; i < pixelcount; ++i) denoise_res.push_back(glm::vec3(0.f));
+    cudaMemcpy((void*)denoise_res.data(), dev_denoised_image_input, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    checkCUDAError("denoisedImg");
+    return denoise_res;
+}
+
 /**
 * Generate PathSegments with rays from the camera through the screen into the
 * scene, which is the first bounce of rays.
