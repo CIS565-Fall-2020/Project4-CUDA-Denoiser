@@ -1,10 +1,20 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
+#include <iostream>
+#include "common.h"
 
 #include "../imgui/imgui.h"
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
+
+using StreamCompaction::Common::PerformanceTimer;
+PerformanceTimer& timer()
+{
+    static PerformanceTimer timer;
+    return timer;
+}
+
 
 static std::string startTimeString;
 
@@ -27,9 +37,9 @@ bool ui_denoise = false;
 int ui_filterSize = 5;
 int prev_ui_filterSize = ui_filterSize;
 int ui_blurSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_colorWeight = 11.789f;
+float ui_normalWeight = 0.610f;
+float ui_positionWeight = 0.407f;
 bool ui_saveAndExit = false;
 int cur_gbuffer = 0;
 bool denoise_computed = false;
@@ -207,6 +217,7 @@ void runCuda() {
     // compute denoised image
     if (ui_denoise) {
         if (!denoise_computed) {
+            timer().startGpuTimer();
             // compute denoised image from current buffers
             // use blur width to determine number of denoise iterations
             int denoise_iter = 0;
@@ -219,6 +230,8 @@ void runCuda() {
             denoiseImage(denoise_iter, ui_colorWeight, ui_normalWeight, ui_positionWeight);
             denoise_computed = true;
             denoised_iteration = iteration;
+            timer().endGpuTimer();
+            std::cout << timer().getGpuElapsedTimeForPreviousOperation() << std::endl;
         }
     }
     else {
