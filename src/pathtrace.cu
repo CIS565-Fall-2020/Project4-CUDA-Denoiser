@@ -74,11 +74,18 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
         float timeToIntersect = gBuffer[index].t * 256.0;
+        glm::vec3 pos = gBuffer[index].position;
+        glm::vec3 nor = gBuffer[index].normal;
+        glm::ivec3 color;
+
+        color.x = glm::clamp((int) (nor.x * 255.0), 0, 255);
+        color.y = glm::clamp((int)(nor.y * 255.0), 0, 255);
+        color.z = glm::clamp((int)(nor.z * 255.0), 0, 255);
 
         pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+        pbo[index].x = color.x;//timeToIntersect;
+        pbo[index].y = color.y;//timeToIntersect;
+        pbo[index].z = color.z;//timeToIntersect;
     }
 }
 
@@ -282,6 +289,8 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
+    gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+    gBuffer[idx].position = getPointOnRay(pathSegments[idx].ray, shadeableIntersections->t);
   }
 }
 
