@@ -364,40 +364,46 @@ __global__ void atrous_filter(
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     if (x < cam.resolution.x && y < cam.resolution.y) {
+        int index = x + (y * cam.resolution.x);
+        // given to us on the top of page 4
         float kernel[5] = { 1.0 / 16.0, 
                        1.0 / 4.0, 
                        3.0 / 8.0, 
                        1.0 / 4.0, 
                        1.0 / 16.0 };
+        // we need to initialize the variables as seen in the sample code
         glm::vec3 sum = glm::vec3(0.f);
-        int index = y * cam.resolution.x + x;
         glm::vec3 cval = img_raw[index];
         glm::vec3 nval = gBuffer[index].nor;
         glm::vec3 pval = gBuffer[index].pos;
+
         float cum_w = 0.f;
         for (int i = 0; i < 5; i++) {
             for (int j = 0; j < 5; j++) {
                 glm::ivec2 uv = glm::ivec2(x + (i - 2) * step_width,
                                            y + (j - 2) * step_width);
                 uv = glm::clamp(uv, glm::ivec2(0, 0), cam.resolution - glm::ivec2(1, 1));
-                int uv_1d = uv.y * cam.resolution.x + uv.x;
+                int uv_1d = uv.x + (uv.y * cam.resolution.x);
                 
+                // calculate color weight of original image
                 glm::vec3 ctmp = img_raw[uv_1d];
-                glm::vec3 t = (ctmp - cval);
+                glm::vec3 t = (cval - ctmp);
                 float dist2 = glm::dot(t, t);
                 float c_w = glm::min(glm::exp(-(dist2) / color_weight), 1.f);
 
+                // calculate normal weight based on gbuffer
                 glm::vec3 ntmp = gBuffer[uv_1d].nor;
                 t = nval - ntmp;
                 dist2 = glm::max(glm::dot(t, t) / (step_width * step_width), 0.f);
                 float n_w = glm::min(glm::exp(-(dist2) / nor_weight), 1.f);
 
+                // calculate the position weight based on gbuffer
                 glm::vec3 ptmp = gBuffer[uv_1d].pos;
                 t = pval - ptmp;
                 dist2 = glm::dot(t, t);
                 float p_w = glm::min(glm::exp(-(dist2) / pos_weight), 1.f);
                 
-                float weight = c_w * n_w * p_w;
+                float weight = c_w * n_w * p_w; // combine them to essentially do edge detection
                 sum += ctmp * weight * kernel[i] * kernel[j];
                 cum_w += weight * kernel[i] * kernel[j];
             }
@@ -406,7 +412,7 @@ __global__ void atrous_filter(
     }
 }
 
-//TODO: if denoising, run kernels that take both the raw pathtraced result
+//if denoising, run kernels that take both the raw pathtraced result
 //and the gbuffer, and put the result in the "pbo" from opengl
 void denoise_filter(int iter, int ui_filterSize, float ui_colorWeight,
     float ui_normalWeight, float ui_positionWeight) {

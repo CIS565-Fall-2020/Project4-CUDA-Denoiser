@@ -6,6 +6,8 @@
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
 
+#define TIMER 1
+
 static std::string startTimeString;
 
 // For camera controls
@@ -25,15 +27,17 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 bool lastDenoise = false;
-int ui_filterSize = 80;
-int lastFilterSize = 80;
-float ui_colorWeight = 2.f;
-float lastcolorWeight = 2.f;
-float ui_normalWeight = 0.35f;
-float lastnormalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
-float lastpositionWeight = 0.2f;
+int ui_filterSize = 128;
+int lastFilterSize = 128;
+float ui_colorWeight = 3.428f;
+float lastcolorWeight = 3.428f;
+float ui_normalWeight = 0.005f;
+float lastnormalWeight = 0.005f;
+float ui_positionWeight = 0.191f;
+float lastpositionWeight = 0.191f;
 bool ui_saveAndExit = false;
+
+float total_time = 0.f;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -145,6 +149,14 @@ bool sceneShouldUpdate() {
 }
 
 void runCuda() {
+
+#if TIMER
+    cudaEvent_t start;
+    cudaEventCreate(&start);
+    cudaEvent_t stop;
+    cudaEventCreate(&stop);
+#endif
+
     if (sceneShouldUpdate() || camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
@@ -171,6 +183,7 @@ void runCuda() {
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+        total_time = 0.f;
     }
 
     uchar4 *pbo_dptr = NULL;
@@ -181,8 +194,30 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
+
+#if TIMER
+        cudaEventRecord(start);
+#endif
+
         pathtrace(frame, iteration, ui_denoise, ui_filterSize, 
             ui_colorWeight, ui_normalWeight, ui_positionWeight);
+
+#if TIMER
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        float ms = 0.f;
+        cudaEventElapsedTime(&ms, start, stop);
+        total_time += ms;
+
+        if (iteration == ui_iterations) {
+            if (ui_denoise) {
+                cout << "Total Denoise Time: " << total_time << "ms for " << ui_iterations << " iterations" << endl;
+            }
+            else {
+                cout << "Total Time: " << total_time << "ms for " << ui_iterations << " iterations" << endl;
+            }
+        }
+#endif
     }
 
     if (ui_showGbuffer) {
