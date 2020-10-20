@@ -156,6 +156,8 @@ static glm::ivec2* dev_offset = NULL;
 static float* dev_kernel = NULL;
 static int lvlimit = 0;
 static int kernelWidth = 0;	// guaranteed to be odd
+static glm::vec3* dev_ping = NULL;
+static glm::vec3* dev_pong = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -194,6 +196,7 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 
 	// these will probably need to be arguments into this function from the ui
 	lvlimit = 5;
+	kernelWidth = 5;
 
 	std::vector<glm::ivec2> offset(kernelWidth * kernelWidth);
 
@@ -215,6 +218,13 @@ void pathtraceInit(Scene* scene, int kernelSize) {
 	cudaMalloc(&dev_kernel, kernelWidth * kernelWidth * sizeof(float));
 	cudaMemcpy(dev_kernel, kernel.data(), kernelWidth * kernelWidth * sizeof(float), cudaMemcpyHostToDevice);
 
+
+	cudaMalloc(&dev_ping, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_ping, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_pong, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_pong, 0, pixelcount * sizeof(glm::vec3));
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -229,6 +239,8 @@ void pathtraceFree() {
 	cudaFree(dev_bufferImage);
 	cudaFree(dev_offset);
 	cudaFree(dev_kernel);
+	cudaFree(dev_ping);
+	cudaFree(dev_pong);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -400,30 +412,34 @@ __global__ void generateGBuffer(
 }
 
 
-__global__ void colorGather(int pixelcount, GBufferPixel* gBuffer, PathSegment* iterationPaths)
+__global__ void colorGather(int pixelcount, glm::vec3* cPing, GBufferPixel* gBuffer, PathSegment* iterationPaths)
 {
 	int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (idx < pixelcount)
 	{
 		PathSegment iterationPath = iterationPaths[idx];
-		gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
+		// gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
+		cPing[iterationPath.pixelIndex] = iterationPath.color;
 	}
 }
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* image, PathSegment* iterationPaths)
+__global__ void finalGather(int nPaths, GBufferPixel* gBuffer, glm::vec3* cPing, glm::vec3* image, PathSegment* iterationPaths)
 {
 	int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (idx < nPaths)
 	{
-		PathSegment iterationPath = iterationPaths[idx];
+		// PathSegment iterationPath = iterationPaths[idx];
 		// gBuffer[iterationPath.pixelIndex].c = iterationPath.color;
 		//image[iterationPath.pixelIndex] = gBuffer[iterationPath.pixelIndex].c;
 
 		// image[iterationPath.pixelIndex] += iterationPath.color;
-		image[idx] += gBuffer[idx].c;
+
+		// image[idx] += gBuffer[idx].c;
+
+		image[idx] += cPing[idx];
 	}
 }
 
@@ -434,7 +450,7 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 						GBufferPixel* gBuffer,
 						glm::ivec2* offset,
 						float* kernel,
-						glm::vec3* image, 
+						glm::vec3* cPing, glm::vec3* cPong,
 						float c_phi, float n_phi, float p_phi)
 {
 	// 2-D to 1-D ***
@@ -454,8 +470,8 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 	{
 		int idx = x + (y * resolution.x);
 
-		// glm::vec3 cval = image[idx];
-		glm::vec3 cval = gBuffer[idx].c;
+		// glm::vec3 cval = gBuffer[idx].c;
+		glm::vec3 cval = cPing[idx];
 
 		glm::vec3 sum = glm::vec3(0.f);
 		GBufferPixel GBPix = gBuffer[idx];
@@ -467,7 +483,8 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 
 			GBufferPixel GBPix2 = gBuffer[idx2.x + (idx2.y * resolution.x)];
 			// glm::vec3 ctmp = image[idx2.x + (idx2.y * resolution.x)];
-			glm::vec3 ctmp = GBPix2.c;
+			// glm::vec3 ctmp = GBPix2.c;
+			glm::vec3 ctmp = cPing[idx2.x + (idx2.y * resolution.x)];
 
 			glm::vec3 t = cval - ctmp;
 			float dist2 = glm::dot(t, t);
@@ -486,7 +503,8 @@ __global__ void aTrousDenoise(glm::ivec2 resolution,
 			cum_w += weight * kernel[i];
 		}
 
-		gBuffer[idx].c = sum / cum_w;
+		// gBuffer[idx].c = sum / cum_w;
+		cPong[idx] = sum / cum_w;
 	}
 }
 
@@ -602,7 +620,7 @@ void pathtrace(int frame, int iter, bool denoise, float c_phi, float n_phi, floa
 
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	colorGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_gBuffer, dev_paths);
+	colorGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_ping, dev_gBuffer, dev_paths);
 
 	checkCUDAError("colorGather");
 
@@ -612,13 +630,14 @@ void pathtrace(int frame, int iter, bool denoise, float c_phi, float n_phi, floa
 			// i need a ping pong buffer. i will read from the image to get color values and then write to a different buffer
 			// this is necessary because all threads are reading and writing to the buffer right now
 			// std::cout << stepWidth << std::endl;
-			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_image, c_phi, n_phi, p_phi);
+			aTrousDenoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, stepWidth, kernelWidth, dev_gBuffer, dev_offset, dev_kernel, dev_ping, dev_pong, c_phi, n_phi, p_phi);
 			// cudaDeviceSynchronize();
+			dev_ping = dev_pong;
 			checkCUDAError("denoise");
 		}
 	}
 
-	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_image, dev_paths);
+	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_gBuffer, dev_ping, dev_image, dev_paths);
 
 	checkCUDAError("finalGather");
 
