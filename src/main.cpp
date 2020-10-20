@@ -23,12 +23,13 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
+bool ui_denoise = true;
 int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_colorWeight = 0.773f;
+float ui_normalWeight = 0.052f;
+float ui_positionWeight = 0.722f;
 bool ui_saveAndExit = false;
+
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -93,7 +94,7 @@ int main(int argc, char** argv) {
 
     // GLFW main loop
     mainLoop();
-
+	
     return 0;
 }
 
@@ -162,7 +163,7 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize, ui_denoise);
     }
 
     if (ui_showGbuffer) {
