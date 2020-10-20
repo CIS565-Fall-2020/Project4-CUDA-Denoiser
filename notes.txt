@@ -1,0 +1,49 @@
+i think that the strange shifting up thing with the denoised image was due to me using the same 
+image data across complete iterations
+
+added dev_bufferImage to the pathtrace.cu
+
+filter size = filter width
+
+Ctrl + K, Ctrl  F
+
+consider using ping pong buffers for the blurred image
+
+
+starting off with smaller cases
+there may be a way to 
+
+How does dim3 work? and dimensions in CUDA. Does dim3 set unspecified arguments to 1 or 0?
+Does CUDA expect unused dimensions to be 1 or 0?
+
+
+
+How do these checkCUDAError work? They sometimes say that an entire is occurring at an incorrect location if 
+I dont have one at every CUDA function call.
+
+
+
+Do we need to include new functions in header files?
+
+
+
+Inside of CUDA files are we using c or C++
+
+Dont have classes. The coding style might be closer to C instead of C++. You can pass structs to CUDA kernels.
+
+When using the memory window is it showing you gpu or cpu memory when you copy and paste an address
+from the locals or autos window?
+
+Can memcpy from the device back to the host.
+And start with a smaller sized buffer so that you can check the values in the buffers by hand.
+
+
+dev_data1, dev_data2;
+// cudamalloc, memcpy, etc
+// for eah iteration, launch kernels on dev_data1 and dev_data2
+int* temp = dev_data1
+dev_dta1 = dev_data2
+dev_data2 = temp
+
+
+The weird alternating thing where every other value was zero was due to the book's funky way of ping ponging.

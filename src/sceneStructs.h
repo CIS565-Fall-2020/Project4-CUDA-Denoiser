@@ -56,6 +56,7 @@ struct RenderState {
     unsigned int iterations;
     int traceDepth;
     std::vector<glm::vec3> image;
+    std::vector<glm::vec3> bufferImage;
     std::string imageName;
 };
 
@@ -79,4 +80,7 @@ struct ShadeableIntersection {
 // What information might be helpful for guiding a denoising filter?
 struct GBufferPixel {
   float t;
+  glm::vec3 c;
+  glm::vec3 n;
+  glm::vec3 p;
 };

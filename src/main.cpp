@@ -6,7 +6,7 @@
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
 
-static std::string startTimeString;
+// static std::string startTimeString;
 
 // For camera controls
 static bool leftMousePressed = false;
@@ -50,7 +50,6 @@ int height;
 //-------------------------------
 
 int main(int argc, char** argv) {
-    startTimeString = currentTimeString();
 
     if (argc < 2) {
         printf("Usage: %s SCENEFILE.txt\n", argv[0]);
@@ -68,6 +67,11 @@ int main(int argc, char** argv) {
     Camera &cam = renderState->camera;
     width = cam.resolution.x;
     height = cam.resolution.y;
+
+    // THIS IS VERY NECESSARY IN ORDER TO STOP THE CUDAMEMCPY INTO BUFFERIMAGE
+    // TO STOP CRASHING. this is necessary because the data() pointer will be
+    // NULL if nothing has been put into the image vector
+    scene->state.bufferImage = std::vector<glm::vec3>(width * height);
 
     ui_iterations = renderState->iterations;
     startupIterations = ui_iterations;
@@ -112,11 +116,26 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
+    ss << filename << "." << currentTimeString() << "." << samples << "samp";
     filename = ss.str();
 
     // CHECKITOUT
     img.savePNG(filename);
+
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix = renderState->bufferImage[index];
+            img.setPixel(width - 1 - x, y, glm::vec3(pix));
+        }
+    }
+
+    ss << "." << "buffer";
+    filename = ss.str();
+
+    // CHECKITOUT
+    img.savePNG(filename);
+    
     //img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
@@ -151,7 +170,7 @@ void runCuda() {
 
     if (iteration == 0) {
         pathtraceFree();
-        pathtraceInit(scene);
+        pathtraceInit(scene, ui_filterSize);
     }
 
     uchar4 *pbo_dptr = NULL;
@@ -162,7 +181,7 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_denoise, ui_colorWeight, ui_normalWeight, ui_positionWeight);
     }
 
     if (ui_showGbuffer) {
