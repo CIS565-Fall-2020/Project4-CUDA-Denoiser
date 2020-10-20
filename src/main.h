@@ -36,10 +36,15 @@ extern int ui_previewBuffer;
 extern bool ui_pauseRendering;
 extern int ui_limitSamples;
 
-extern int ui_filterSize;
-extern float ui_colorWeight;
-extern float ui_normalWeight;
-extern float ui_positionWeight;
+extern int ui_specularFilterSize;
+extern float ui_specularColorWeight;
+extern float ui_specularNormalWeight;
+extern float ui_specularPositionWeight;
+
+extern int ui_diffuseFilterSize;
+extern float ui_diffuseColorWeight;
+extern float ui_diffuseNormalWeight;
+extern float ui_diffusePositionWeight;
 
 void runCuda();
 void restartRendering();

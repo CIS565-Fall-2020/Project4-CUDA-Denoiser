@@ -196,7 +196,7 @@ void drawGui(int windowWidth, int windowHeight) {
 
     // Dear imgui define
     ImVec2 minSize(300.f, 100.f);
-    ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.5);
+    ImVec2 maxSize((float)windowWidth, (float)windowHeight);
     ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
 
     ImGui::SetNextWindowPos(ui_hide ? ImVec2(-1000.f, -1000.f) : ImVec2(0.0f, 0.0f));
@@ -217,13 +217,15 @@ void drawGui(int windowWidth, int windowHeight) {
 
 	{
 		const char *previewItems[] = {
-            "Direct Illumination",
-            "Direct Illumination Variance",
-            "Indirect Illumination",
-            "Indirect Illumination Variance",
+            "Direct Specular Illumination",
+            "Direct Specular Illumination Variance",
+            "Indirect Diffuse Illumination",
+            "Indirect Diffuse Illumination Variance",
             "Full Illumination",
             "World Normal",
             "World Position",
+            "Filtered Direct Specular",
+            "Filtered Indirect Diffuse",
             "Filtered Color"
         };
 		ImGui::Combo("Visualize Buffer", &ui_previewBuffer, previewItems, IM_ARRAYSIZE(previewItems));
@@ -234,10 +236,17 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Separator();
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.001f, 3.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.001f, 3.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.001f, 3.0f);
+    ImGui::SliderInt("Specular Filter Size", &ui_specularFilterSize, 0, 100);
+    ImGui::SliderFloat("Specular Color Weight", &ui_specularColorWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Specular Normal Weight", &ui_specularNormalWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Specular Position Weight", &ui_specularPositionWeight, 0.001f, 3.0f);
+
+    ImGui::Separator();
+
+    ImGui::SliderInt("Diffuse Filter Size", &ui_diffuseFilterSize, 0, 100);
+    ImGui::SliderFloat("Diffuse Color Weight", &ui_diffuseColorWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Diffuse Normal Weight", &ui_diffuseNormalWeight, 0.001f, 3.0f);
+    ImGui::SliderFloat("Diffuse Position Weight", &ui_diffusePositionWeight, 0.001f, 3.0f);
 
     ImGui::End();
 

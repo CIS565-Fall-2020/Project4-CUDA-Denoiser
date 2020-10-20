@@ -14,19 +14,19 @@ Denoised 16 samples per pixel image.
 
 Original 16 samples per pixel image.
 
-## Separation of Direct and Indirect Illumination
+## Separation of Direct specular and Indirect diffuse Illumination
 
 ![](img/atrous/disney/direct.png)
 
-Direct illumination, 16 samples per pixel.
+Direct specular illumination, 16 samples per pixel.
 
 ![](img/atrous/disney/indirect.png)
 
-Indirect illumination, 16 samples per pixel.
+Indirect diffuse illumination, 16 samples per pixel.
 
-The path tracer has been modified to output direct and indirect illumination separately. As can be seen from the two images above, indirect illumination contains much more noise that direct illumination. Therefore, to reduce the amount of blurring, only indirect illumination is denoised.
+The path tracer has been modified to output direct specular and indirect diffuse illumination separately. Direct specular illumination consists of direct illumination and all paths consisting entirely of specular bounces, while indirect diffuse illumination consists of indirect illumination with one or more diffuse bounces. This separation scheme ensures that glossy and specular reflections are not filtered excessively. As can be seen from the two images above, indirect illumination contains much more noise that direct illumination. Different filter parameters are used for the two components.
 
-One downside of this naive separation is that glossy and specular reflections are also considered indirect illumination. Although it's handled as a special case for specular reflection and specular transmission materials, specular reflections of objects using Disney materials are still filtered.
+A more conservative separation of a scene's illumination is into direct and indirect illumination. In this scheme, direct illumination requires almost no filtering, but filtering indirect illumination would also blur glossy and specular reflections.
 
 ## Variance-Guided Filtering
 
@@ -88,15 +88,15 @@ Water scene, 16 samples per pixel.
 
 ![](img/atrous/water/direct.png)
 
-Direct illumination in the water scene.
+Direct specular illumination in the water scene.
 
 ![](img/atrous/water/indirect.png)
 
-Indirect illumination in the water scene. A large part of the scene is lit by indirect illumination.
+Indirect diffuse illumination in the water scene. A large part of the scene is lit by indirect diffuse illumination.
 
 ![](img/atrous/water/denoised.png)
 
-Denoised water scene, 16 samples per pixels. A satisfactory result is hard to obtain using such low sample count due to the complex geometry and light transport in the scene, and the wide usage of glossy materials. The direct illumination of this scene also contains a lot of noise due to the large size of the light source.
+Denoised water scene, 16 samples per pixels. A satisfactory result is hard to obtain using such low sample count due to the complex geometry and light transport in the scene, and the wide usage of glossy materials. The direct specular illumination of this scene also contains a lot of noise due to the large size of the light source.
 
 Project 3: Path Tracer
 =========

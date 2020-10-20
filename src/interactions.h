@@ -189,7 +189,7 @@ __host__ __device__ float schlickFresnelFull(float eta, float cosOut) {
 
 __host__ __device__ bool sampleBsdf(
 	glm::vec3 lightOut, glm::vec3 shadeNormal, Material m, bool backface,
-	glm::vec2 rand, glm::vec3 *lightInRes, glm::vec3 *bsdf, float *pdf
+	glm::vec2 rand, glm::vec3 *lightInRes, glm::vec3 *bsdf, float *pdf, bool *isSpecular
 ) {
 	glm::vec3 lightIn;
 	switch (m.type) {
@@ -197,6 +197,7 @@ __host__ __device__ bool sampleBsdf(
 		lightIn = glm::reflect(-lightOut, shadeNormal);
 		*bsdf = m.baseColorLinear / glm::abs(glm::dot(shadeNormal, lightIn));
 		*pdf = 1.0f;
+		*isSpecular = true;
 		break;
 	case MaterialType::specularTransmission:
 		{
@@ -228,6 +229,7 @@ __host__ __device__ bool sampleBsdf(
 				*pdf = 1.0f - fresnel;
 			}
 			*bsdf = m.baseColorLinear * (*pdf) / glm::abs(glm::dot(shadeNormal, lightIn));
+			*isSpecular = true;
 		}
 		break;
 
@@ -249,6 +251,7 @@ __host__ __device__ bool sampleBsdf(
 				rand.x = (rand.x - diffuseWeight) / (1.0f - diffuseWeight);
 				half = sampleDisneySpecularHalf(m, shadeNormal, rand);
 				lightIn = glm::reflect(-lightOut, half);
+				*isSpecular = true;
 			}
 
 			float cosOut = glm::abs(glm::dot(shadeNormal, lightOut)), cosIn = glm::dot(shadeNormal, lightIn);
@@ -411,7 +414,10 @@ __host__ __device__ void multipleImportanceSampling(
 	// sample bsdf
 	glm::vec3 lteBsdf(0.0f), lightInBsdf, bsdfBsdf;
 	float bsdfPdfBsdf = 0.0f, lightPdfBsdf = 0.0f;
-	if (sampleBsdf(-path.ray.direction, shadeNormal, m, backface, rand2, &lightInBsdf, &bsdfBsdf, &bsdfPdfBsdf)) {
+	bool isSpecularDummy;
+	if (sampleBsdf(
+		-path.ray.direction, shadeNormal, m, backface, rand2, &lightInBsdf, &bsdfBsdf, &bsdfPdfBsdf, &isSpecularDummy
+	)) {
 		Ray ray;
 		ray.origin = intersect;
 		ray.direction = lightInBsdf;
@@ -469,7 +475,7 @@ __host__ __device__ void multipleImportanceSampling(
 __host__ __device__ void scatterRay(
 	PathSegment &path, glm::vec3 intersect,
 	glm::vec3 geomNormal, glm::vec3 shadeNormal, const Material &m,
-	glm::vec2 rand, bool includeDirectLighting, bool isIndirect
+	glm::vec2 rand, bool *isSpecular, bool includeDirectLighting, bool isIndirect
 ) {
 	path.ray.origin = intersect;
 
@@ -491,7 +497,7 @@ __host__ __device__ void scatterRay(
 
 		glm::vec3 brdf, lightIn;
 		float pdf;
-		if (!sampleBsdf(-path.ray.direction, shadeNormal, m, backface, rand, &lightIn, &brdf, &pdf)) {
+		if (!sampleBsdf(-path.ray.direction, shadeNormal, m, backface, rand, &lightIn, &brdf, &pdf, isSpecular)) {
 			path.remainingBounces = 0;
 		}
 		path.ray.direction = lightIn;

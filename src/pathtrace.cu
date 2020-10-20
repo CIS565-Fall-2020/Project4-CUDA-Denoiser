@@ -82,7 +82,7 @@ static CameraSample *dev_camSamplePool = nullptr;
 
 static glm::vec3 *dev_normalBuffer = nullptr;
 static glm::vec3 *dev_positionBuffer = nullptr;
-static glm::vec3 *dev_colorBuffer1 = nullptr, *dev_colorBuffer2 = nullptr;
+static glm::vec3 *dev_filteredDirectSpecular = nullptr, *dev_filteredIndirectDiffuse = nullptr, *dev_filteredTemp = nullptr;
 static float *dev_stddevBuffer = nullptr;
 
 void pathtraceInit(Scene *scene, int sqrtNumStratifiedSamples) {
@@ -131,8 +131,9 @@ void pathtraceInit(Scene *scene, int sqrtNumStratifiedSamples) {
 
 	cudaMalloc(&dev_normalBuffer, pixelCount * sizeof(glm::vec3));
 	cudaMalloc(&dev_positionBuffer, pixelCount * sizeof(glm::vec3));
-	cudaMalloc(&dev_colorBuffer1, pixelCount * sizeof(glm::vec3));
-	cudaMalloc(&dev_colorBuffer2, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_filteredDirectSpecular, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_filteredIndirectDiffuse, pixelCount * sizeof(glm::vec3));
+	cudaMalloc(&dev_filteredTemp, pixelCount * sizeof(glm::vec3));
 	cudaMalloc(&dev_stddevBuffer, pixelCount * sizeof(float));
 
 	checkCUDAError("pathtraceInit");
@@ -163,8 +164,9 @@ void pathtraceFree() {
 
 	cudaFree(dev_normalBuffer);
 	cudaFree(dev_positionBuffer);
-	cudaFree(dev_colorBuffer1);
-	cudaFree(dev_colorBuffer2);
+	cudaFree(dev_filteredDirectSpecular);
+	cudaFree(dev_filteredIndirectDiffuse);
+	cudaFree(dev_filteredTemp);
 	cudaFree(dev_stddevBuffer);
 
 	checkCUDAError("pathtraceFree");
@@ -228,6 +230,7 @@ __global__ void generateRayFromCamera(
 	segment.lastGeom = -1;
 	segment.remainingBounces = traceDepth;
 	segment.prevBounceNoMis = true; // so that light sources are rendered correctly
+	segment.prevBounceSpecular = true;
 	segment.indirectIllum = false;
 }
 
@@ -303,7 +306,8 @@ __global__ void shade(
 
 		bool isSpecular =
 			mat.type == MaterialType::specularReflection || mat.type == MaterialType::specularTransmission;
-		bool misIsIndirect = path.indirectIllum || !path.prevBounceNoMis;
+		bool isSpecularRay = isSpecular;
+		bool misIsIndirect = path.indirectIllum || !path.prevBounceSpecular;
 		if (lightMis != -1 && !isSpecular) {
 			multipleImportanceSampling(
 				path, intersectPoint, intersection.geometricNormal, intersection.shadingNormal,
@@ -314,12 +318,13 @@ __global__ void shade(
 		scatterRay(
 			path, intersectPoint,
 			intersection.geometricNormal, intersection.shadingNormal, mat,
-			sample.out,
+			sample.out, &isSpecularRay,
 			depth == 0 || lightMis == -1 || geoms[path.lastGeom].type != GeomType::TRIANGLE,
 			path.indirectIllum
 		);
 		path.indirectIllum = misIsIndirect;
 		path.prevBounceNoMis = isSpecular;
+		path.prevBounceSpecular = isSpecularRay;
 	} else {
 		path.colorThroughput = glm::vec3(0.0f);
 		path.remainingBounces = 0;
@@ -583,7 +588,6 @@ __global__ void aTrousCopyBuffer(const glm::vec3 *accumBuf, glm::vec3 *target, i
 
 __global__ void aTrousGenBuffers(
 	Camera cam, glm::vec3 *normal, glm::vec3 *position,
-	float *stddev, const glm::vec3 *colorTotal, const float *colorSqr,
 	int width, int height, int iter,
 	const Geom* geoms, const AABBTreeNode* aabbTree, int aabbTreeRoot
 ) {
@@ -618,7 +622,18 @@ __global__ void aTrousGenBuffers(
 		pos = glm::vec3(0.0f);
 		norm = glm::vec3(0.0f);
 	}
+}
 
+__global__ void aTrousComputeVariance(
+	float *stddev, const glm::vec3 *colorTotal, const float *colorSqr,
+	int width, int height, int iter
+) {
+	int ix = threadIdx.x + blockIdx.x * blockDim.x;
+	int iy = threadIdx.y + blockIdx.y * blockDim.y;
+	if (ix >= width || iy >= height) {
+		return;
+	}
+	int pixelIndex = iy * width + ix;
 
 	glm::vec3 pixColorTotal = colorTotal[pixelIndex];
 	float pixColorSqrTotal = colorSqr[pixelIndex];
@@ -632,7 +647,25 @@ __global__ void aTrousGenBuffers(
 	}
 }
 
-void aTrous(int levels, float radius, int iter, float colorWeight, float normalWeight, float positionWeight) {
+void aTrousPrepare(int iter) {
+	const Camera &cam = hst_scene->state.camera;
+
+	dim3 blockSize2D(16, 16);
+	dim3 numBlocks2D(
+		(cam.resolution.x + blockSize2D.x - 1) / blockSize2D.x,
+		(cam.resolution.y + blockSize2D.y - 1) / blockSize2D.y
+	);
+
+	aTrousGenBuffers<<<numBlocks2D, blockSize2D>>> (
+		hst_scene->state.camera, dev_normalBuffer, dev_positionBuffer,
+		cam.resolution.x, cam.resolution.y, iter,
+		dev_geoms, dev_aabbTree, aabbTreeRoot
+	);
+}
+
+void aTrous(
+	BufferType buf, int levels, float radius, int iter, float colorWeight, float normalWeight, float positionWeight
+) {
 	const Camera &cam = hst_scene->state.camera;
 
 	int numPixels = cam.resolution.x * cam.resolution.y;
@@ -645,29 +678,37 @@ void aTrous(int levels, float radius, int iter, float colorWeight, float normalW
 		(cam.resolution.y + blockSize2D.y - 1) / blockSize2D.y
 	);
 
-	const glm::vec3 *colorBuf = dev_indirectIllum;
-	const float *colorSqrBuf = dev_indirectIllumSqr;
+	const glm::vec3 *colorBuf;
+	glm::vec3 **resultBuf;
+	const float *colorSqrBuf;
+	if (buf == BufferType::DirectSpecularIllumination) {
+		colorBuf = dev_indirectIllum;
+		colorSqrBuf = dev_indirectIllumSqr;
+		resultBuf = &dev_filteredIndirectDiffuse;
+	} else if (buf == BufferType::IndirectDiffuseIllumination) {
+		colorBuf = dev_directIllum;
+		colorSqrBuf = dev_directIllumSqr;
+		resultBuf = &dev_filteredDirectSpecular;
+	} else {
+		std::abort();
+	}
 
-	aTrousCopyBuffer<<<numBlocks, blockSize>>>(colorBuf, dev_colorBuffer1, numPixels, iter);
-
-	aTrousGenBuffers<<<numBlocks2D, blockSize2D>>>(
-		hst_scene->state.camera, dev_normalBuffer, dev_positionBuffer,
-		dev_stddevBuffer, colorBuf, colorSqrBuf,
-		cam.resolution.x, cam.resolution.y, iter,
-		dev_geoms, dev_aabbTree, aabbTreeRoot
+	aTrousCopyBuffer<<<numBlocks, blockSize>>>(colorBuf, *resultBuf, numPixels, iter);
+	aTrousComputeVariance<<<numBlocks2D, blockSize2D>>>(
+		dev_stddevBuffer, colorBuf, colorSqrBuf, cam.resolution.x, cam.resolution.y, iter
 	);
 
 	float stepSize = 0.5f * radius / glm::pow(2.0f, levels);
 	for (int i = 0; i < levels; ++i) {
 		aTrousIter<<<numBlocks2D, blockSize2D>>>(
-			dev_colorBuffer1, dev_normalBuffer, dev_positionBuffer,
+			*resultBuf, dev_normalBuffer, dev_positionBuffer,
 			dev_stddevBuffer, cam.resolution.x, cam.resolution.y, stepSize,
 			colorWeight * colorWeight, normalWeight * normalWeight, positionWeight * positionWeight,
-			dev_colorBuffer2
+			dev_filteredTemp
 		);
 
 		stepSize *= 2.0f;
-		std::swap(dev_colorBuffer1, dev_colorBuffer2);
+		std::swap(*resultBuf, dev_filteredTemp);
 	}
 }
 
@@ -677,18 +718,18 @@ __host__ __device__ glm::vec3 processTexel(
 ) {
 	glm::vec3 pix1 = buf1[index];
 	switch (bufType) {
-	case BufferType::DirectIlluminationVariance:
+	case BufferType::DirectSpecularIlluminationVariance:
 		[[fallthrough]];
-	case BufferType::IndirectIlluminationVariance:
+	case BufferType::IndirectDiffuseIlluminationVariance:
 		{
 			float sumSqr = static_cast<const float*>(buf2)[index];
 			float variance = (sumSqr - glm::length2(pix1) / static_cast<float>(iter)) / (iter - 1);
 			return glm::pow(glm::vec3(variance, 0.0f, 0.0f), glm::vec3(0.3f));
 		}
 
-	case BufferType::DirectIllumination:
+	case BufferType::DirectSpecularIllumination:
 		[[fallthrough]];
-	case BufferType::IndirectIllumination:
+	case BufferType::IndirectDiffuseIllumination:
 		[[fallthrough]];
 	case BufferType::FullIllumination:
 		{
@@ -723,7 +764,6 @@ __host__ __device__ glm::vec3 processTexel(
 
 	case BufferType::Normal:
 		return (pix1 + 1.0f) * 0.5f;
-		break;
 
 	case BufferType::Position:
 		{
@@ -731,9 +771,14 @@ __host__ __device__ glm::vec3 processTexel(
 			return (pix1 + 0.5f * scale) / scale;
 		}
 
+	case BufferType::FilteredDirectSpecular:
+		[[fallthrough]];
+	case BufferType::FilteredIndirectDiffuse:
+		return glm::pow(pix1, glm::vec3(1.0f / 2.2f));
+
 	case BufferType::FilteredColor:
 		return glm::pow(
-			pix1 / static_cast<float>(iter) + static_cast<const glm::vec3 *>(buf2)[index],
+			pix1 + static_cast<const glm::vec3*>(buf2)[index],
 			glm::vec3(1.0f / 2.2f)
 		);
 	}
@@ -771,16 +816,16 @@ __global__ void processImage(
 void getBuffers(BufferType buf, const glm::vec3 **buf1, const void **buf2) {
 	*buf2 = nullptr;
 	switch (buf) {
-	case BufferType::DirectIlluminationVariance:
+	case BufferType::DirectSpecularIlluminationVariance:
 		*buf2 = dev_directIllumSqr;
 		[[fallthrough]];
-	case BufferType::DirectIllumination:
+	case BufferType::DirectSpecularIllumination:
 		*buf1 = dev_directIllum;
 		break;
-	case BufferType::IndirectIlluminationVariance:
+	case BufferType::IndirectDiffuseIlluminationVariance:
 		*buf2 = dev_indirectIllumSqr;
 		[[fallthrough]];
-	case BufferType::IndirectIllumination:
+	case BufferType::IndirectDiffuseIllumination:
 		*buf1 = dev_indirectIllum;
 		break;
 	case BufferType::FullIllumination:
@@ -793,9 +838,15 @@ void getBuffers(BufferType buf, const glm::vec3 **buf1, const void **buf2) {
 	case BufferType::Position:
 		*buf1 = dev_positionBuffer;
 		break;
+	case BufferType::FilteredDirectSpecular:
+		*buf1 = dev_filteredDirectSpecular;
+		break;
+	case BufferType::FilteredIndirectDiffuse:
+		*buf1 = dev_filteredIndirectDiffuse;
+		break;
 	case BufferType::FilteredColor:
-		*buf1 = dev_directIllum;
-		*buf2 = dev_colorBuffer1;
+		*buf1 = dev_filteredDirectSpecular;
+		*buf2 = dev_filteredIndirectDiffuse;
 		break;
 	}
 }

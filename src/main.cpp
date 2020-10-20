@@ -30,10 +30,15 @@ int ui_previewBuffer = static_cast<int>(BufferType::FullIllumination);
 bool ui_pauseRendering = false;
 int ui_limitSamples = 0;
 
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+int ui_specularFilterSize = 80;
+float ui_specularColorWeight = 3.0f;
+float ui_specularNormalWeight = 0.15f;
+float ui_specularPositionWeight = 0.4f;
+
+int ui_diffuseFilterSize = 10;
+float ui_diffuseColorWeight = 1.0f;
+float ui_diffuseNormalWeight = 0.1f;
+float ui_diffusePositionWeight = 0.1f;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -141,16 +146,16 @@ void saveImage(BufferType type) {
     std::ostringstream ss;
     ss << filename << "." << startTimeString << "." << samples << "samp" << ".";
     switch (static_cast<BufferType>(ui_previewBuffer)) {
-    case BufferType::DirectIllumination:
+    case BufferType::DirectSpecularIllumination:
         ss << "direct";
         break;
-    case BufferType::DirectIlluminationVariance:
+    case BufferType::DirectSpecularIlluminationVariance:
         ss << "directVar";
         break;
-    case BufferType::IndirectIllumination:
+    case BufferType::IndirectDiffuseIllumination:
         ss << "indirect";
         break;
-    case BufferType::IndirectIlluminationVariance:
+    case BufferType::IndirectDiffuseIlluminationVariance:
         ss << "indirectVar";
         break;
     case BufferType::FullIllumination:
@@ -269,7 +274,15 @@ void runCuda() {
         }
     }
 
-    aTrous(5, ui_filterSize, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight);
+    aTrousPrepare(iteration);
+    aTrous(
+        BufferType::DirectSpecularIllumination, 5, ui_specularFilterSize, iteration,
+        ui_specularColorWeight, ui_specularNormalWeight, ui_specularPositionWeight
+    );
+    aTrous(
+        BufferType::IndirectDiffuseIllumination, 5, ui_diffuseFilterSize, iteration,
+        ui_diffuseColorWeight, ui_diffuseNormalWeight, ui_diffusePositionWeight
+    );
 
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void **)&pbo_dptr, pbo);

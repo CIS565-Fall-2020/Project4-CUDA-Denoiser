@@ -5,13 +5,15 @@
 #include "utilities.h"
 
 enum class BufferType {
-	DirectIllumination,
-	DirectIlluminationVariance,
-	IndirectIllumination,
-	IndirectIlluminationVariance,
+	DirectSpecularIllumination,
+	DirectSpecularIlluminationVariance,
+	IndirectDiffuseIllumination,
+	IndirectDiffuseIlluminationVariance,
 	FullIllumination,
 	Normal,
 	Position,
+	FilteredDirectSpecular,
+	FilteredIndirectDiffuse,
 	FilteredColor
 };
 
@@ -22,7 +24,10 @@ void updateStratifiedSamples(
 );
 
 void pathtrace(int frame, int iteration, int directLight, int numLights);
-void aTrous(int levels, float radius, int iter, float colorWeight, float normalWeight, float positionWeight);
+void aTrousPrepare(int iter);
+void aTrous(
+	BufferType buf, int levels, float radius, int iter, float colorWeight, float normalWeight, float positionWeight
+);
 
 void saveBufferState(BufferType buf, int iteration);
 void sendBufferToPbo(uchar4 *pbo, BufferType buf, int iter);

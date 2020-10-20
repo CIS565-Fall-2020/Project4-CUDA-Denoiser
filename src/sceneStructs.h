@@ -104,8 +104,9 @@ struct PathSegment {
 	Ray ray;
 	int pixelIndex;
 	int lastGeom;
-	int16_t remainingBounces;
+	int8_t remainingBounces;
 	bool prevBounceNoMis;
+	bool prevBounceSpecular;
 	bool indirectIllum;
 };
 
