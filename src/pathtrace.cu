@@ -100,6 +100,7 @@ static Material * dev_materials = NULL;
 static PathSegment * dev_paths = NULL;
 static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
+static float elapsedTime = 0.f;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -125,7 +126,7 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
-
+	elapsedTime = 0.f;
     checkCUDAError("pathtraceInit");
 }
 
@@ -381,10 +382,17 @@ __global__ void Atrous(
 		dev_image[index] = sum / cum_w;
 	}
 }
+
+PerformanceTimer& timer()
+{
+	static PerformanceTimer timer;
+	return timer;
+}
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
+
 void pathtrace(int frame, int iter, float c_phi, float n_phi, float p_phi, int nStep, bool denoise) {
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
@@ -483,7 +491,7 @@ void pathtrace(int frame, int iter, float c_phi, float n_phi, float p_phi, int n
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
     ///////////////////////////////////////////////////////////////////////////
-
+	timer().startGpuTimer();
 	// denoising
 	if (denoise) {
 		Atrous << <blocksPerGrid2d, blockSize2d >> > (
@@ -495,7 +503,9 @@ void pathtrace(int frame, int iter, float c_phi, float n_phi, float p_phi, int n
 			dev_gBuffer,
 			nStep);
 	}
-
+	timer().endGpuTimer();
+	elapsedTime += timer().getGpuElapsedTimeForPreviousOperation();
+	cout << "Elapsed time: " << elapsedTime << endl;
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
     // Otherwise, screenshots are also acceptable.
     // Retrieve image from GPU

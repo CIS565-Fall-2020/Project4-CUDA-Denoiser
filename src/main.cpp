@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
 
     // GLFW main loop
     mainLoop();
-
+	
     return 0;
 }
 
