@@ -36,10 +36,10 @@ extern int ui_iterations;
 extern int startupIterations;
 extern bool ui_showGbuffer;
 extern bool ui_denoise;
-extern int ui_filterSize;
-extern float ui_colorWeight;
-extern float ui_normalWeight;
-extern float ui_positionWeight;
+extern int ui_filterLayers;
+extern float ui_color_phi;
+extern float ui_normal_phi;
+extern float ui_position_phi;
 extern bool ui_saveAndExit;
 
 void runCuda();
