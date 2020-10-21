@@ -15,7 +15,8 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
-#define TIMING 1
+#define TIMING 0
+#define TIMING2 1
 float totalTime = 0.f;
 int iterNum = 0;
 
@@ -444,7 +445,13 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
  * of memory management
  */
 void pathtrace(int frame, int iter) {
-
+#if TIMING2
+	  cudaEvent_t event_start = nullptr;
+	  cudaEvent_t event_end = nullptr;
+	  cudaEventCreate(&event_start);
+	  cudaEventCreate(&event_end);
+	  cudaEventRecord(event_start);
+#endif
 
 	  const int traceDepth = hst_scene->state.traceDepth;
 	  const Camera& cam = hst_scene->state.camera;
@@ -550,6 +557,23 @@ void pathtrace(int frame, int iter) {
 			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
 	  checkCUDAError("pathtrace");
+
+#if TIMING2
+	  cudaEventRecord(event_end);
+	  cudaEventSynchronize(event_end);
+	  float thisIter = 0.f;
+	  cudaEventElapsedTime(&thisIter, event_start, event_end);
+	  totalTime += thisIter;
+	  if (iterNum <= 10) {
+			std::cout << "time for this iter: " << thisIter << std::endl;
+			std::cout << "totalTime is: " << totalTime << std::endl;
+			std::cout << "iter is: " << iterNum << std::endl;
+	  }
+	  iterNum++;
+
+	  cudaEventDestroy(event_start);
+	  cudaEventDestroy(event_end);
+#endif
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
