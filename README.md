@@ -1,4 +1,4 @@
-CUDA Path Tracer
+CUDA Denoiser
 ================
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
