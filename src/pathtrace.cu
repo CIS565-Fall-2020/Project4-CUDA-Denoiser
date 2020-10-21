@@ -418,19 +418,6 @@ void pathtrace(int frame, int iter) {
     checkCUDAError("pathtrace");
 }
 
-__global__ void averageImage(glm::vec3 *image, glm::vec3 *imageDst, glm::ivec2 resolution, int iter)
- {
- 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-  if (x >= resolution.x || y >= resolution.y) return;
-  int index = x + (y * resolution.x);
-  glm::vec3 pix = image[index];	
-  pix.x = glm::clamp(pix.x / iter, 0.f, 1.f);
-  pix.y = glm::clamp(pix.y / iter, 0.f, 1.f);
-  pix.z = glm::clamp(pix.z / iter, 0.f, 1.f);
-  imageDst[index] = pix;
- }
-
  __global__ void ATrousFilter(glm::vec3* image, glm::ivec2 resolution, GBufferPixel* gBuffer, 
   int stepWidth, glm::vec3* imageDst, float cphi, float nphi, float pphi)
 {
@@ -477,6 +464,21 @@ __global__ void averageImage(glm::vec3 *image, glm::vec3 *imageDst, glm::ivec2 r
   imageDst[index] = sum / sumw;
 }
 
+ __global__ void averageImage(glm::vec3* image, glm::vec3* imageDst, glm::ivec2 resolution, int iter)
+ {
+     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+     if (x < resolution.x && y < resolution.y) {
+         int index = x + (y * resolution.x);
+         glm::vec3 pix = image[index];
+         pix.x = glm::clamp(pix.x / iter, 0.f, 1.f);
+         pix.y = glm::clamp(pix.y / iter, 0.f, 1.f);
+         pix.z = glm::clamp(pix.z / iter, 0.f, 1.f);
+         imageDst[index] = pix;
+     }
+ }
+
 void denoise(int filterLevelNum, float cphi, float nphi, float pphi, int iter)
  {
  	const Camera &cam = hst_scene->state.camera;
@@ -488,7 +490,8 @@ void denoise(int filterLevelNum, float cphi, float nphi, float pphi, int iter)
  	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
   // Average image by iteration first
- 	// averageImage<<<blocksPerGrid2d, blockSize2d >>>(dev_image, dev_imageDenoised0, cam.resolution, iter);
+  averageImage<<<blocksPerGrid2d, blockSize2d >>>(dev_image, dev_imageDenoised0, cam.resolution, iter);
+  // cudaMemcpy(dev_imageDenoised0, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
 
   for (int i = 0; i < filterLevelNum; ++i) {
  		ATrousFilter<<<blocksPerGrid2d, blockSize2d>>>(dev_imageDenoised0, cam.resolution, dev_gBuffer, 1 << i,
@@ -536,5 +539,5 @@ void showDenoisedImage(uchar4 * pbo, int iter)
  		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
   	// Send results to OpenGL buffer for rendering
- 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_imageDenoised0);
+ 	sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, 1, dev_imageDenoised0);
 }

@@ -214,7 +214,7 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Checkbox("Denoise", &ui_denoise);
 
-    if (ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100)) {
+    if (ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 10)) {
       ui_denoiseDirty = true;
     }
     if (ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f)) {
