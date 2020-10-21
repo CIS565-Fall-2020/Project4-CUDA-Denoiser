@@ -27,7 +27,7 @@ positions         |   normals
 
 
 ### Performance
-<img src="img/performance.PNG" width="500">
+<img src="img/performance2.PNG" width="500">
 
 
 Here is a comparison of the rendering time with and without denoising. We can see that denoising always will take up extra processing time, and increases linearly with filter size.
