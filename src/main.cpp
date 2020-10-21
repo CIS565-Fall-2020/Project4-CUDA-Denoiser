@@ -1,6 +1,7 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
+#include <chrono>
 
 #include "../imgui/imgui.h"
 #include "../imgui/imgui_impl_glfw.h"
@@ -24,7 +25,7 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
+int ui_filterSize = 10;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -45,6 +46,8 @@ int iteration;
 
 int width;
 int height;
+double renderTime = 0.0;
+bool showPerf = true;
 
 //-------------------------------
 //-------------MAIN--------------
@@ -113,7 +116,7 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
+    ss << filename << "." << startTimeString << "." << samples << "samp" << "." << ui_filterSize << "filter";
     filename = ss.str();
 
     // CHECKITOUT
@@ -150,44 +153,59 @@ void runCuda() {
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
-
     if (iteration == 0) {
         pathtraceFree();
         pathtraceInit(scene);
+        renderTime = 0.0;
+        showPerf = true;
     }
-
-    uchar4 *pbo_dptr = NULL;
+    uchar4* pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
     if (iteration < ui_iterations) {
-        iteration++;
-
-        // execute the kernel
-        int frame = 0;
-        pathtrace(frame, iteration);
-    }
-    
-    if (iteration == ui_iterations && ui_denoise && ui_denoiseDirty) {
-      denoise(ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight, iteration);
-      ui_denoiseDirty = false;
+            iteration++;
+            // execute the kernel
+            int frame = 0;
+            auto startTime = std::chrono::high_resolution_clock::now();
+            pathtrace(frame, iteration);
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto timeSpan = std::chrono::duration_cast<std::chrono::duration<double>>(endTime - startTime);
+            renderTime += timeSpan.count();
     }
 
+    if (iteration == ui_iterations) {
+        if (showPerf) {
+            std::cout << "Render time for " << ui_iterations << " is " << renderTime << std::endl;
+            showPerf = false;
+        }
+        if (ui_denoise && ui_denoiseDirty) {
+            auto startTime = std::chrono::high_resolution_clock::now();
+            denoise(ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight, iteration);
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto timeSpan = std::chrono::duration_cast<std::chrono::duration<double>>(endTime - startTime);
+            std::cout << "Denoise time for " << ui_filterSize << " filter levels  is " << timeSpan.count() << std::endl;
+            ui_denoiseDirty = false;
+        }
+
+    }
     if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
-    } else if (iteration == ui_iterations && ui_denoise) {
-      showDenoisedImage(pbo_dptr, iteration);
-    }  else {
-      showImage(pbo_dptr, iteration);
+        showGBuffer(pbo_dptr);
     }
-
+    else if (iteration == ui_iterations && ui_denoise) {
+        showDenoisedImage(pbo_dptr, iteration);
+    }
+    else {
+        showImage(pbo_dptr, iteration);
+    }
     // unmap buffer object
     cudaGLUnmapBufferObject(pbo);
 
+
     if (ui_saveAndExit) {
         saveImage();
-        pathtraceFree();
-        cudaDeviceReset();
-        exit(EXIT_SUCCESS);
+        //pathtraceFree();
+        //cudaDeviceReset();
+        //exit(EXIT_SUCCESS);
     }
 }
 
