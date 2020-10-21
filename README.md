@@ -9,9 +9,9 @@ CUDA Denoiser
 
 
 
-### Features:
-  * A Trous filter denoising based on the paper: [Edge-Avoiding À-Trous Wavelet Transform for fast Global
-Illumination Filtering](https://jo.dreggn.org/home/2010_atrous.pdf)
+### Overview:
+This is an implementation of A Trous filter denoising based on the paper: [Edge-Avoiding À-Trous Wavelet Transform for fast Global
+Illumination Filtering](https://jo.dreggn.org/home/2010_atrous.pdf). The reference images are performed on a basic Monte-Carlo Path Tracer.
   
 
 ### Denoise Results
@@ -26,6 +26,9 @@ positions         |   normals
 <img src="img/pos.png" width="500">| <img src="img/normal.png" width="500"> |
 
 
-### Optimization
+### Performance
+<img src="img/performance.PNG" width="500">
 
+
+Here is a comparison of the rendering time with and without denoising. We can see that denoising always will take up extra processing time, and increases linearly with filter size.
 
