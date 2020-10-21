@@ -23,7 +23,19 @@ To analyze the time used to denoise, first we consider the image of 800 * 800 re
 </p>
 
 #### Denoise performance for different levels
-We can observe the denoise performance for different levels under the same cornell scene.
+We can observe the denoise performance for different levels under the same cornell scene. The result clearly gets better as the number of filter levels grow.
+<p align="center">
+<span>200 iter 1 filter levels</span>
+<img src="./result/200samp.1filter.png" />
+</p>
+<p align="center">
+<span>200 iter 3 filter levels</span>
+<img src="./result/200samp.3filter.png" />
+</p>
+<p align="center">
+<span>200 iter 5 filter levels</span>
+<img src="./result/200samp.5filter.png" />
+</p>
 
 
 ### Denoise in different resolutions
@@ -32,5 +44,10 @@ To measure the denoise time in different resolutions, we very the resolution fro
 <img src="./result/denoise_res_time.png" />
 </p>
 
-
+### Denoise performace in different scenes
+We can compare the performance of the denoiser in different scenes. Here we choose 50 iterations + 5 filter levels. From the results, it seems that the denoiser performs better in fully-lighted scenarios.
+||Original|Denoised|
+|-------|-------|---------------|
+|Cornell|<img src="./result/cornell_original.png" />|<img src="./result/cornell_denoise.png" />|
+|Cornell celing|<img src="./result/ceiling_original.png" />|<img src="./result/ceiling_denoise.png" />|
 
