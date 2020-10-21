@@ -7,7 +7,7 @@ DIFF	    1
 REFL        0
 REFR        0
 REFRIOR     0
-EMITTANCE   5
+EMITTANCE   1
 PROCEDTEXT  0
 
 // Diffuse white
@@ -76,7 +76,7 @@ cube
 material 0
 TRANS       0 10 0
 ROTAT       0 0 0
-SCALE       3 .3 3
+SCALE       8 .3 8
 
 // Floor
 OBJECT 1

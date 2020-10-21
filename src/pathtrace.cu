@@ -182,12 +182,11 @@ __global__ void normalizeGaussianFilter(int filterSize, float* filter, float* su
 }
 
 void generateGaussianFilter(float sigma) {
-    // Assume initial filter is less than 32 * 32
-    dim3 blockSize(initialFilterSize, initialFilterSize, 1);
-    generateGaussianValues << <1, blockSize >> > (initialFilterSize, dev_gaussianFilter, sigma);
-    float sum = 0.0f;
+    dim3 blockSize(32, 32, 1);
+    int numBlocks = ceil((float)initialFilterSize * initialFilterSize / (float)(blockSize.x * blockSize.y));
+    generateGaussianValues << <numBlocks, blockSize >> > (initialFilterSize, dev_gaussianFilter, sigma);
     sumGaussianFilter << <1, 1 >> > (initialFilterSize, dev_gaussianFilter, dev_filterSum);
-    normalizeGaussianFilter<<<1, blockSize>>> (initialFilterSize, dev_gaussianFilter, dev_filterSum);
+    normalizeGaussianFilter<<<numBlocks, blockSize>>> (initialFilterSize, dev_gaussianFilter, dev_filterSum);
 }
 
 void pathtraceInit(Scene *scene) {
@@ -212,8 +211,8 @@ void pathtraceInit(Scene *scene) {
     // TODO: initialize any extra device memory you need
     cudaMalloc(&dev_intersections_first_bounce, pixelcount * sizeof(ShadeableIntersection));
     
-   //cudaMalloc(&dev_samples, scene->state.iterations * sizeof(glm::vec2));
-    numSamples = scene->state.iterations;
+    //cudaMalloc(&dev_samples, scene->state.iterations * sizeof(glm::vec2));
+    //numSamples = scene->state.iterations;
 
     // Denoiser-related buffer
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
@@ -553,6 +552,63 @@ __device__ int intLog2(int x) {
     return lg;
 }
 
+// this doesn't work for filter sizes > 50 for some reason
+__global__ void denoiseImageGaussian(glm::ivec2 resolution,
+	glm::vec3* imageDenoised,
+	glm::vec3* image,
+	GBufferPixel* gBuffer,
+	float* filter,
+	int gaussianSize,
+	float colWeight,
+	float norWeight,
+	float posWeight) {
+
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int radius = gaussianSize / 2;
+		int index = x + (y * resolution.x);
+		glm::vec3 average = glm::vec3(0);
+		float sumFilterWeights = 0.0f;
+		glm::vec3 originalColor = image[index];
+		GBufferPixel originalGBuffer = gBuffer[index];
+
+		// Iterate through entire kernel
+		for (int xBlur = -radius; xBlur <= radius; xBlur++) {
+			for (int yBlur = -radius; yBlur <= radius; yBlur++) {
+
+				int xCoord = clampValue(x + xBlur, 0, resolution.x - 1);
+				int yCoord = clampValue(y + yBlur, 0, resolution.y - 1);
+
+				int sampleIdx = xCoord + (yCoord * resolution.x);
+
+				GBufferPixel gbp = gBuffer[sampleIdx];
+
+				float rtWeight = calculateWeight(originalColor, image[sampleIdx], colWeight),
+					nWeight = calculateWeight(originalGBuffer.nor, gbp.nor, norWeight),
+					pWeight = calculateWeight(originalGBuffer.pos, gbp.pos, posWeight);
+
+				float weight = rtWeight * nWeight * pWeight;
+
+				// calculate gaussian weight of that pixel and add its color to average
+				int i = (xBlur + radius) + ((yBlur + radius) * gaussianSize);
+				i = clampValue(i, 0, gaussianSize * gaussianSize - 1);
+				average += weight * filter[i] * image[sampleIdx];
+				sumFilterWeights += weight * filter[i];
+			}
+		}
+
+
+		if (sumFilterWeights > 0) {
+			imageDenoised[index] = average / sumFilterWeights;
+		}
+		else {
+			imageDenoised[index] = image[index];
+		}
+	}
+}
+
 __global__ void denoiseImage(glm::ivec2 resolution,
     glm::vec3* imageDenoised,
     glm::vec3 * image,
@@ -568,7 +624,7 @@ __global__ void denoiseImage(glm::ivec2 resolution,
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     if (x < resolution.x && y < resolution.y) {
-        int radius = filterSize / 2;
+        int radius = gaussianSize / 2;
         int index = x + (y * resolution.x);
         glm::vec3 average = glm::vec3(0);
         float sumFilterWeights = 0.0f;
@@ -581,38 +637,27 @@ __global__ void denoiseImage(glm::ivec2 resolution,
         for (int iter = 0; iter < iterNumber; iter++) {
             // Iterate through entire kernel
             for (int xBlur = -radius; xBlur <= radius; xBlur++) {
-                // check if pixel x is in range or not
-                int xCoord = x + xBlur;
-                xCoord = clampValue(xCoord, 0, resolution.x - 1);
-
+                int sampleX = xBlur * (iter + 1);
                 for (int yBlur = -radius; yBlur <= radius; yBlur++) {
-                    // check if pixel y is in range or not
-                    int yCoord = y + yBlur;
-                    yCoord = clampValue(yCoord, 0, resolution.y - 1);
-
-                    int originalIdx = xCoord + (yCoord * resolution.x);
-
-                    int sampleX = xBlur * (iter + 1);
                     int sampleY = yBlur * (iter + 1);
 
+                    int xCoord = clampValue(x + sampleX, 0, resolution.x - 1);
+                    int yCoord = clampValue(y + sampleY, 0, resolution.y - 1);
 
-                    sampleX = clampValue(x + sampleX, 0, resolution.x - 1);
-                    sampleY = clampValue(y + sampleY, 0, resolution.y - 1);
-
-                    int sampleIdx = sampleX + (sampleY * resolution.x);
+                    int sampleIdx = xCoord + (yCoord * resolution.x);
 
                     GBufferPixel gbp = gBuffer[sampleIdx];
 
                     float rtWeight = calculateWeight(originalColor, image[sampleIdx], colWeight),
-                        nWeight = calculateWeight(originalGBuffer.nor, gbp.nor, norWeight),
-                        pWeight = calculateWeight(originalGBuffer.pos, gbp.pos, posWeight);
+                           nWeight = calculateWeight(originalGBuffer.nor, gbp.nor, norWeight),
+                           pWeight = calculateWeight(originalGBuffer.pos, gbp.pos, posWeight);
 
                     float weight = rtWeight * nWeight * pWeight;
 
                     // calculate gaussian weight of that pixel and add its color to average
-                    int i = (xBlur + radius) * (yBlur + radius) * filterSize;
-                    i = clampValue(i, 0, filterSize * filterSize - 1);
-                    average += filter[i] * image[sampleIdx];
+                    int i = (xBlur + radius) + ((yBlur + radius) * gaussianSize);
+                    i = clampValue(i, 0, gaussianSize * gaussianSize - 1);
+                    average += weight * filter[i] * image[sampleIdx];
                     sumFilterWeights += weight * filter[i];
                 }
             }
@@ -660,7 +705,7 @@ PerformanceTimer& timer()
 }
 
 #define numCPUIterations -1
-#define numGPUIterations -1
+#define numGPUIterations 10
 static float averageCPUIterTime = 0.0f;
 static float averageGPUIterTime = 0.0f;
 void pathtrace(uchar4 *pbo, int frame, int iter) {
@@ -851,21 +896,30 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
         colorWeight,
         normalWeight,
         positionWeight);
+
+    //denoiseImageGaussian << <blocksPerGrid2d, blockSize2d >> > (cam.resolution,
+    //    dev_imageDenoised,
+    //    dev_image,
+    //    dev_gBuffer,
+    //    dev_gaussianFilter,
+    //    initialFilterSize,
+    //    colorWeight,
+    //    normalWeight,
+    //    positionWeight);
     
     timer().endGpuTimer();
 
-    if (denoise) {
-        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_imageDenoised);
-        // Retrieve image from GPU
-    }
-    else {
-        // Send results to OpenGL buffer for rendering
-        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
-    }
+    cudaDeviceSynchronize();
+    // ping pong buffers
+    glm::vec3* temp = dev_image;
+    dev_image = dev_imageDenoised;
+    dev_imageDenoised = temp;
+
 
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,
             pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+
 
     checkCUDAError("pathtrace");
     
@@ -911,9 +965,11 @@ void showImage(uchar4* pbo, int iter) {
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+    cudaDeviceSynchronize();
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,
         cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
 }
 
 void showDenoisedImage(uchar4* pbo, int iter) {
@@ -925,7 +981,9 @@ void showDenoisedImage(uchar4* pbo, int iter) {
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_imageDenoised);
+    cudaDeviceSynchronize();
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_imageDenoised,
         cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
 }

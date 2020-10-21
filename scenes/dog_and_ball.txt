@@ -146,9 +146,9 @@ PROCEDTEXT  0
 CAMERA
 RES         1600 900
 FOVY        45
-ITERATIONS  5000
+ITERATIONS  50
 DEPTH       8
-FILE        glass
+FILE        dogball
 EYE         -4 0 10
 LOOKAT      -1 5 -0
 UP          0 1 0

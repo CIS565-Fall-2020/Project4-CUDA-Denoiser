@@ -22,10 +22,10 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 40;
-float ui_colorWeight = 3.814f;
-float ui_normalWeight = 1.134f;
-float ui_positionWeight = 2.526f;
+int ui_filterSize = 200;
+float ui_colorWeight = 5.192f;
+float ui_normalWeight = 0.331f;
+float ui_positionWeight = 1.381f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -48,6 +48,7 @@ int height;
 //-------------------------------
 
 int main(int argc, char** argv) {
+    cudaDeviceReset();
     startTimeString = currentTimeString();
 
     if (argc < 2) {
@@ -242,14 +243,11 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
     theta -= (ypos - lastY) / height;
     theta = std::fmax(0.001f, std::fmin(theta, PI));
     camchanged = true;
-    //cout << "Look at: " << renderState->camera.lookAt.x << ", " << renderState->camera.lookAt.y << ", " << renderState->camera.lookAt.z << endl;
-    //cout << "Up: " << renderState->camera.up.x << ", " << renderState->camera.up.y << ", " << renderState->camera.up.z << endl;
   }
   else if (rightMousePressed) {
     zoom += (ypos - lastY) / height;
     zoom = std::fmax(0.1f, zoom);
     camchanged = true;
-    //cout << "Eye: " << renderState->camera.position.x << ", " << renderState->camera.position.x << ", " << renderState->camera.position.x << endl;
   }
   else if (middleMousePressed) {
     renderState = &scene->state;
@@ -264,7 +262,6 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
     cam.lookAt -= (float) (xpos - lastX) * right * 0.01f;
     cam.lookAt += (float) (ypos - lastY) * forward * 0.01f;
     camchanged = true;
-    //cout << "Eye: " << renderState->camera.position.x << ", " << renderState->camera.position.y << ", " << renderState->camera.position.z << endl;
   }
 
   lastX = xpos;
