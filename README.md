@@ -1,6 +1,8 @@
+=======
+CUDA Denoiser For CUDA Path Tracer
+==================================
 
-
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Qiaosen Chen
   * [LinkedIn](https://www.linkedin.com/in/qiaosen-chen-725699141/), etc.

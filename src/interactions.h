@@ -6,7 +6,6 @@
 #define STRATIFIED_SAMPLING true
 #define SAMPLES_PER_PIXEL 64
 
-// CHECKITOUT
 /**
  * Computes a cosine-weighted random direction in a hemisphere.
  * Used for diffuse lighting.

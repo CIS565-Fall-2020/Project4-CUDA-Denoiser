@@ -324,6 +324,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 	if (x < cam.resolution.x && y < cam.resolution.y) 
 	{
 		int index = x + (y * cam.resolution.x);
+
 		PathSegment& segment = pathSegments[index];
 		segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
 		
@@ -350,6 +351,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 			segment.ray.direction = glm::normalize(pFocus - segment.ray.origin); 
 		}
 #endif // DEPTH_OF_FIELD
+    
 		segment.pixelIndex = index;
 		segment.remainingBounces = traceDepth;
 	}
@@ -773,6 +775,7 @@ __global__ void computeSquareRoot(glm::ivec2 resolution, float* colorVecLens, fl
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
+
 void pathtrace(uchar4* pbo, int frame, int iter) 
 {
 	const int traceDepth = hst_scene->state.traceDepth;
@@ -921,7 +924,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
 	// Retrieve image from GPU
 	cudaMemcpy(hst_scene->state.image.data(), dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-
 	checkCUDAError("pathtrace");
 }
 
@@ -955,7 +957,6 @@ void showImage(uchar4* pbo, int iter, bool denoised)
 		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
 	}
 }
-
 
 void denoise(uchar4* pbo, int iter, int atrous_total_num_iters, float c_phi, float n_phi, float p_phi)
 {

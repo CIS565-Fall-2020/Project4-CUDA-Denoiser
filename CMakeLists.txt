@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(cis565_path_tracer)
+project(cis565_denoiser)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -120,7 +120,7 @@ source_group(imgui FILES ${imgui})
 
 #add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
 
-cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers})
+cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui})
 target_link_libraries(${CMAKE_PROJECT_NAME}
     ${LIBRARIES}
     #stream_compaction  # TODO: uncomment if using your stream compaction
