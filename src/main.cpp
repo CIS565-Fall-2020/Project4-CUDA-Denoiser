@@ -104,15 +104,21 @@ int main(int argc, char **argv) {
 }
 
 void saveImage() {
-  float samples = iteration;
-  // output image file
-  image img(width, height);
+    float samples = iteration;
+    // output image file
+    image img(width, height);
 
-  for (int x = 0; x < width; x++) {
-    for (int y = 0; y < height; y++) {
-      int index = x + (y * width);
-      glm::vec3 pix = renderState->image[index];
-      img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            int index = x + (y * width);
+            glm::vec3 pix = renderState->image[index];
+            if (ui_denoise) {
+                img.setPixel(width - 1 - x, y, glm::vec3(pix));
+            }
+            else {
+                img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            }
+        }
     }
   }
 
