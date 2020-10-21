@@ -89,10 +89,8 @@ static Material * dev_materials = NULL;
 static PathSegment * dev_paths = NULL;
 static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
-static glm::vec3 * dev_imageDenoised0 = NULL;
-static glm::vec3 * dev_imageDenoised1 = NULL;
-// TODO: static variables for device memory, any extra info you need, etc
-// ...
+static glm::vec3 * dev_denoiseImg0 = NULL;
+static glm::vec3 * dev_denoiseImg1 = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -115,10 +113,10 @@ void pathtraceInit(Scene *scene) {
 
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
     
-    cudaMalloc(&dev_imageDenoised0, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_imageDenoised0, 0, pixelcount * sizeof(glm::vec3));
-    cudaMalloc(&dev_imageDenoised1, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_imageDenoised1, 0, pixelcount * sizeof(glm::vec3));
+    cudaMalloc(&dev_denoiseImg0, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_denoiseImg0, 0, pixelcount * sizeof(glm::vec3));
+    cudaMalloc(&dev_denoiseImg1, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_denoiseImg1, 0, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -130,8 +128,8 @@ void pathtraceFree() {
   	cudaFree(dev_materials);
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
-    cudaFree(dev_imageDenoised0);
-    cudaFree(dev_imageDenoised1);
+    cudaFree(dev_denoiseImg0);
+    cudaFree(dev_denoiseImg1);
 
     checkCUDAError("pathtraceFree");
 }
@@ -353,7 +351,6 @@ void pathtrace(int frame, int iter) {
     //     since some shaders you write may also cause a path to terminate.
     // * Finally:
     //     * if not denoising, add this iteration's results to the image
-    //     * TODO: if denoising, run kernels that take both the raw pathtraced result and the gbuffer, and put the result in the "pbo" from opengl
 
 	generateRayFromCamera <<<blocksPerGrid2d, blockSize2d >>>(cam, iter, traceDepth, dev_paths);
 	checkCUDAError("generate camera ray");
@@ -464,7 +461,7 @@ void pathtrace(int frame, int iter) {
   imageDst[index] = sum / sumw;
 }
 
- __global__ void averageImage(glm::vec3* image, glm::vec3* imageDst, glm::ivec2 resolution, int iter)
+ __global__ void divIteration(glm::vec3* image, glm::vec3* imageDst, glm::ivec2 resolution, int iter)
  {
      int x = (blockIdx.x * blockDim.x) + threadIdx.x;
      int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -490,17 +487,16 @@ void denoise(int filterLevelNum, float cphi, float nphi, float pphi, int iter)
  	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
   // Average image by iteration first
-  averageImage<<<blocksPerGrid2d, blockSize2d >>>(dev_image, dev_imageDenoised0, cam.resolution, iter);
-  // cudaMemcpy(dev_imageDenoised0, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+  divIteration<<<blocksPerGrid2d, blockSize2d >>>(dev_image, dev_denoiseImg0, cam.resolution, iter);
 
   for (int i = 0; i < filterLevelNum; ++i) {
- 		ATrousFilter<<<blocksPerGrid2d, blockSize2d>>>(dev_imageDenoised0, cam.resolution, dev_gBuffer, 1 << i,
- 			dev_imageDenoised1, cphi, nphi, pphi);
- 		std::swap(dev_imageDenoised0, dev_imageDenoised1);
+ 		ATrousFilter<<<blocksPerGrid2d, blockSize2d>>>(dev_denoiseImg0, cam.resolution, dev_gBuffer, 1 << i,
+ 			dev_denoiseImg1, cphi, nphi, pphi);
+ 		std::swap(dev_denoiseImg0, dev_denoiseImg1);
  	}
   // Send results to OpenGL buffer for rendering
  	cudaMemcpy(
-    hst_scene->state.image.data(), dev_imageDenoised0,
+    hst_scene->state.image.data(), dev_denoiseImg0,
      pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost
   );
 
@@ -520,14 +516,14 @@ void showGBuffer(uchar4* pbo) {
 }
 
 void showImage(uchar4* pbo, int iter) {
-const Camera &cam = hst_scene->state.camera;
-    const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+  const Camera &cam = hst_scene->state.camera;
+  const dim3 blockSize2d(8, 8);
+  const dim3 blocksPerGrid2d(
+          (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+          (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
-    // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+  // Send results to OpenGL buffer for rendering
+  sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
 }
 
 void showDenoisedImage(uchar4 * pbo, int iter)
@@ -539,5 +535,5 @@ void showDenoisedImage(uchar4 * pbo, int iter)
  		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
   	// Send results to OpenGL buffer for rendering
- 	sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, 1, dev_imageDenoised0);
+ 	sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, 1, dev_denoiseImg0);
 }
