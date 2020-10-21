@@ -15,9 +15,9 @@ Illumination Filtering](https://jo.dreggn.org/home/2010_atrous.pdf)
   
 
 ### Denoise Results
-Unsmoothed           |       Smoothed           |    
+Unsmoothed           |       Smoothed           
 :-------------------------:|:-------------------------:
-<img src="img/unsmoothed.png" width="500">| <img src="img/smoothed.png" width=500">|
+<img src="img/unsmoothed.png" width="500">| <img src="img/smoothed.png" width="500"> |
 
 
 ### GBuffer visualizations
@@ -27,4 +27,5 @@ positions         |   normals
 
 
 ### Optimization
+
 
