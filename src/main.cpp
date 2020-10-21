@@ -24,7 +24,8 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
+//int ui_filterSize = 80;
+int ui_denoiseIter = 10;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -171,7 +172,7 @@ void runCuda() {
     else {
         if (ui_denoise)
         {
-            denoise(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+            denoise(pbo_dptr, ui_denoiseIter, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight);
         }
         else
         {

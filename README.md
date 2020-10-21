@@ -8,6 +8,49 @@ CUDA Path Tracer
 * Tested on: Windows 10, i5-9600K @ 3.70GHz 16GB, RTX 2070 SUPER 8GB 
 * SM：7.5
 
+### Denoise
+**Fallguys**
+
+| With denoising (32 pt iters) | Without denoising (32 pt iters) | Without denoising (2000 pt iters) |
+| ------------------------ | ----------------------- | -----------------------|
+| ![](img/denoise/fallguys_denoise.png) | ![](img/denoise/fallguys.png) |![](img/denoise/fallguys_2000.png)|
+
+As can be seen from the above three images, when PT has only 32 iterations, denoising can help to present a very good effect, which is similar to the PT result that has 2000 PT iterations and is without denoising. And the result of 32 PT iterations without denoising is very poor (the middle image).
+
+**Ceiling light**
+
+| PT reference (500 iters) | Denoise- 2 iters |
+| ------------------------ | ----------------------- |
+| ![](img/denoise/500iter_rt.png) | ![](img/denoise/ceiling_light_10_2.png) |
+
+| Denoise- 5 iters | Denoise- 10 iters |
+| ------------------------ | ----------------------- |
+| ![](img/denoise/ceiling_light_10_5.png) | ![](img/denoise/ceiling_light_10_10.png) |
+
+**Ceiling light VS Cornell**
+
+| Ceiling light (20 pt iters / 5 dn iters)| Cornell (20 pt iters / 5 dn iters) | Cornell (100 pt iters / 5 dn iters) |
+| ------------------------ | ----------------------- | --------------------------|
+| ![](img/denoise/ceiling_light_20_5.png) | ![](img/denoise/cornell_20_5.png) | ![](img/denoise/cornell_100_5.png) |
+
+Comparing these two scenes, the denoising of the ceiling light scene under the same parameters can produce better results. For cornell, it may require more PT iterations to produce better results, such as in the third picture. I think it is because of the different light sizes, because for a smaller light, more noise will be generated under the same sampling times, so more samples are needed to achieve better results.
+
+**Analysis**
+
+| 10 iters for PT, 5 iters for denoising | 
+| ------------------------ | 
+| ![](img/denoise/resolution.png) | 
+
+According to the figure above, the denoising time increases with the increase in resolution, and there is a linear increase trend.
+
+
+| Resolution: 800 * 800, 5 iters for denoising | 
+| ------------------------ | 
+| ![](img/denoise/materials.png) |
+
+
+For different materials, from my results, it has almost no effect on the running time of denoising, because denoising processes the output image of path trace, so it has nothing to do with the material.
+
 ### Features
 * Ideal diffuse surface
 * Specular-reflective surface

@@ -21,7 +21,8 @@ using utilTimer::PerformanceTimer;
 #define MATERIAL_SORT 1
 #define DEPTH_OF_FIELD 0
 #define ANTIALIASING 1
-#define GPU_TIMER 1
+#define GPU_TIMER 0
+#define DENOISE_TIMER 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -736,8 +737,7 @@ __global__ void denoisePerIter(
     glm::vec3* denoise2,
     float c_phi,
     float n_phi,
-    float p_phi,
-    int filterSize)
+    float p_phi)
 {   
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -799,7 +799,7 @@ __global__ void processImage(glm::vec3 *image, glm::vec3 *denoise, glm::ivec2 re
 	}
 }
 
-void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, int filterSize)
+void denoise(uchar4* pbo, int denoiseIteration, int iter, float c_phi, float n_phi, float p_phi)
 {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
@@ -808,16 +808,32 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, int f
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
+#if DENOISE_TIMER == 1
+	cudaEventRecord(start);
+#endif // DENOISE_TIMER
+
     //cudaMemcpy(dev_denoise, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
     processImage << < numblocksDenoising, blockSize2d >> > (dev_image, dev_denoise, cam.resolution, iter);
 
-    for(int i = 0; i < iter; ++i) 
+    for(int i = 0; i < denoiseIteration; ++i) 
     {
         int stepWidth = 1 << i;
-        denoisePerIter <<<numblocksDenoising, blockSize2d>>> (cam.resolution, stepWidth, dev_gBuffer, dev_denoise, dev_denoise2, c_phi, n_phi, p_phi, filterSize);
+        denoisePerIter <<<numblocksDenoising, blockSize2d>>> (cam.resolution, stepWidth, dev_gBuffer, dev_denoise, dev_denoise2, c_phi, n_phi, p_phi);
 
         std::swap(dev_denoise, dev_denoise2);
         checkCUDAError("swap buffers");
     }
     sendImageToPBO  << <numblocksDenoising, blockSize2d >> > (pbo, cam.resolution, 1, dev_denoise);
+
+#if DENOISE_TIMER == 1
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float t;
+	cudaEventElapsedTime(&t, start, stop);
+	totalTime += t;
+	if (timerStart) {
+		std::cout << " average iteration time is: " << totalTime / denoiseIteration << " ms" <<std::endl;
+		timerStart = false;
+	}
+#endif // DENOISE_TIMER
 }
