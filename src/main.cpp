@@ -29,6 +29,7 @@ float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
+bool ui_denoiseDirty = true;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -128,6 +129,7 @@ void runCuda() {
 
     if (camchanged) {
         iteration = 0;
+        ui_denoiseDirty = true;
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
         cameraPosition.y = zoom * cos(theta);
@@ -164,10 +166,17 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
+    
+    if (iteration == ui_iterations && ui_denoise && ui_denoiseDirty) {
+      denoise(ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight, iteration);
+      ui_denoiseDirty = false;
+    }
 
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
-    } else {
+    } else if (iteration == ui_iterations && ui_denoise) {
+      showDenoisedImage(pbo_dptr, iteration);
+    }  else {
       showImage(pbo_dptr, iteration);
     }
 
