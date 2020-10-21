@@ -15,6 +15,9 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
+#define TIMING 1
+float totalTime = 0.f;
+int iterNum = 0;
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -238,6 +241,9 @@ void pathtraceInit(Scene* scene) {
 	  cudaMalloc(&dev_denoise1, pixelcount * sizeof(glm::vec3));
 	  cudaMemset(dev_denoise1, 0, pixelcount * sizeof(glm::vec3));
 
+	  totalTime = 0.f;
+	  iterNum = 0;
+
 	  checkCUDAError("pathtraceInit");
 }
 
@@ -429,11 +435,17 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 	  }
 }
 
+
+
+
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
 void pathtrace(int frame, int iter) {
+
+
 	  const int traceDepth = hst_scene->state.traceDepth;
 	  const Camera& cam = hst_scene->state.camera;
 	  const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -553,6 +565,14 @@ void showGBuffer(uchar4* pbo) {
 }
 
 void showDenoise(uchar4* pbo, int iter, int filterIter, float cPhi, float nPhi, float pPhi) {
+#if TIMING
+	  cudaEvent_t event_start = nullptr;
+	  cudaEvent_t event_end = nullptr;
+	  cudaEventCreate(&event_start);
+	  cudaEventCreate(&event_end);
+	  cudaEventRecord(event_start);
+#endif
+
 	  const Camera& cam = hst_scene->state.camera;
 	  const dim3 blockSize2d(8, 8);
 	  const dim3 blocksPerGrid2d( 
@@ -585,9 +605,33 @@ void showDenoise(uchar4* pbo, int iter, int filterIter, float cPhi, float nPhi, 
 	  //const int pixelcount = cam.resolution.x * cam.resolution.y;
 	  //cudaMemcpy(hst_scene->state.image.data(), dev_denoise0,
 			//pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+
+#if TIMING
+	  cudaEventRecord(event_end);
+	  cudaEventSynchronize(event_end);
+	  float thisIter = 0.f;
+	  cudaEventElapsedTime(&thisIter, event_start, event_end);
+	  totalTime += thisIter;
+	  if (iterNum <= 10) {
+			std::cout << "time for this iter: " << thisIter << std::endl;
+			std::cout << "totalTime is: " << totalTime << std::endl;
+			std::cout << "iter is: " << iterNum << std::endl;
+	  }
+	  iterNum++;
+
+	  cudaEventDestroy(event_start);
+	  cudaEventDestroy(event_end);
+#endif
 }
 
 void showImage(uchar4* pbo, int iter) {
+#if TIMING
+	  cudaEvent_t event_start = nullptr;
+	  cudaEvent_t event_end = nullptr;
+	  cudaEventCreate(&event_start);
+	  cudaEventCreate(&event_end);
+	  cudaEventRecord(event_start);
+#endif
 	  const Camera& cam = hst_scene->state.camera;
 	  const dim3 blockSize2d(8, 8);
 	  const dim3 blocksPerGrid2d(
@@ -596,4 +640,22 @@ void showImage(uchar4* pbo, int iter) {
 
 	  // Send results to OpenGL buffer for rendering
 	  sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+
+#if TIMING
+	  cudaEventRecord(event_end);
+	  cudaEventSynchronize(event_end);
+	  float thisIter = 0.f;
+	  cudaEventElapsedTime(&thisIter, event_start, event_end);
+	  totalTime += thisIter;
+	  if (iterNum <= 10) {
+			std::cout << "time for this iter: " << thisIter << std::endl;
+			std::cout << "totalTime is: " << totalTime << std::endl;
+			std::cout << "iter is: " << iterNum << std::endl;
+	  }
+	  
+	  iterNum++;
+
+	  cudaEventDestroy(event_start);
+	  cudaEventDestroy(event_end);
+#endif
 }
