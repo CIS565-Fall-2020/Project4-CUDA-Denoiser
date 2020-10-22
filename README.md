@@ -30,7 +30,7 @@ CUDA Denoiser For CUDA Path Tracer
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | ![denoised_cornell](./img/denoised_cornell.png)              | ![./img/denoised_cornell_ceiling_light](./img/denoised_cornell_ceilling_light.png) | ![denoised_cornell_glassball](./img/denoised_cornell_glassball.png) | ![denoised_cornell_mjolnir](./img/denoised_cornell_mjolnir.png) |
 
-![Running Time of 100 Iterations between Render with and without Denoiser](./img/Running Time of 100 Iterations between Render with and without Denoiser.png)
+![Running Time of 100 Iterations between Render with and without Denoiser](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/img/Running%20Time%20of%20100%20Iterations%20between%20Render%20with%20and%20without%20Denoiser.png)
 
 As we can see from the above table, the render with denoiser actually takes a little bit more time to run 100 iterations than the render without denoiser. It's reasonable to spend more time to run extra 3 iteration to compute the A Trous filtering, but the difference in running time is very small, so the Edge-Avoiding A-Trous Wavelet Transform algorithm is very efficient.
 
@@ -46,7 +46,7 @@ As the [project Introduction](https://github.com/giaosame/Project4-CUDA-Denoiser
 
 ### The influences of denoiser on the runtime at different resolutions
 
-![Running Time of 100 Iterations at Different Resolutions](./img/Running Time of 100 Iterations at Different Resolutions.png)
+![Running Time of 100 Iterations at Different Resolutions](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/img/Running%20Time%20of%20100%20Iterations%20at%20Different%20Resolutions.png)
 
 Apparently, larger resolution means more running time. From the above char, we know that denoiser almost doesn't have any influences on the runtime at different resolutions.
 
@@ -72,7 +72,7 @@ However, the smoothing effect brought by denoiser is absolutely a disaster for m
 
 If the filter size is small, for example less than 17 x 17, i.e., use fewer than 3 iterations to call the edge stopping function, the denoising is not effective, the images are still filled with grains, because of the small blurred area. Comparing the usual filter size 17 x 17, those images denoised with larger filter size don't show a great improvement, and from the following chart we can know that the difference in filter size don't have a impact on running time, so it's feasible and reasonable to choose 17 x 17 as the A Trous filter size.
 
-![Runtime of Varying Filter Sizes Rendered in the Basic Cornell Scene](./img/Runtime of Varying Filter Sizes Rendered in the Basic Cornell Scene.png)
+![Runtime of Varying Filter Sizes Rendered in the Basic Cornell Scene](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/img/Runtime%20of%20Varying%20Filter%20Sizes%20Rendered%20in%20the%20Basic%20Cornell%20Scene.png)
 
 ### A-Trous filtering and Gaussian filtering Comparison
 
@@ -82,7 +82,7 @@ If the filter size is small, for example less than 17 x 17, i.e., use fewer than
 | ![A-Trous Filtering Result of cornell_ceiling_light](./img/denoised_cornell_ceilling_light.png) | ![Gaussian Filtering Result of denoised_cornell_ceilling_light](./img/denoised_cornell_ceilling_light_gaussian.png) |
 | ![A-Trous Filtering Result of cornell_glassball](./img/denoised_cornell_glassball.png) | ![Gaussian Filtering Result of cornell_glassball](./img/denoised_cornell_glassball_gaussian.png) |
 
-![A-Trous filtering and Gaussian filtering Comparison in Runtime](./img/A-Trous filtering and Gaussian filtering Comparison in Runtime.png)
+![A-Trous filtering and Gaussian filtering Comparison in Runtime](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/img/A-Trous%20filtering%20and%20Gaussian%20filtering%20Comparison%20in%20Runtime.png)
 
 I implemented the basic Gaussian filtering with kernel size 17 x 17 and $\sigma$ = 15, which just simply blurs the image, as we can see. The Gaussian filtering only outputs a blurred images without details and take a little bit more time than A-Trous filtering, so A-Trous definitely outperforms Gaussian filtering. 
 
