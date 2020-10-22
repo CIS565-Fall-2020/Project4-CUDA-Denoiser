@@ -130,3 +130,25 @@ std::istream& utilityCore::safeGetline(std::istream& is, std::string& t) {
         }
     }
 }
+
+void utilityCore::computeGaussianKernel(std::vector<float>& kernel, const int kernel_size, const float sigma)
+{
+    int half_size = kernel_size / 2;
+    float sum = 0.f;
+    float double_sigma_square = 2 * sigma * sigma;
+    float alpha = 1.f / (PI * double_sigma_square);
+    for (int i = -half_size; i <= half_size; i++)
+    {
+        for (int j = -half_size; j <= half_size; j++)
+        {
+            float temp = alpha * exp(-((i * i + j * j) / double_sigma_square));
+            sum += temp;
+            kernel.push_back(temp);
+        }
+    }
+
+    for (int i = 0; i < kernel.size(); i++)
+    {
+        kernel[i] /= sum;
+    }
+}

@@ -86,7 +86,7 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void copyImage(int iter, glm::ivec2 resolution, glm::vec3* image, glm::vec3* copied_image)
+__global__ void copyRGBImage(int iter, glm::ivec2 resolution, glm::vec3* image, glm::vec3* copied_image)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -94,15 +94,41 @@ __global__ void copyImage(int iter, glm::ivec2 resolution, glm::vec3* image, glm
 	if (x < resolution.x && y < resolution.y)
 	{
 		int index = x + (y * resolution.x);
-		glm::vec3 pix = image[index];
-		pix.x = glm::clamp(pix.x / iter, 0.f, 1.f);
-		pix.y = glm::clamp(pix.y / iter, 0.f, 1.f);
-		pix.z = glm::clamp(pix.z / iter, 0.f, 1.f);
-		copied_image[index] = pix;
+		copied_image[index] = image[index] / float(iter);
 	}
 }
 
-__global__ void edgeStopping(glm::ivec2 resolution, int atrous_iter, glm::vec3* image, glm::vec3* denoised_image, 
+// Implement gaussian filtering to compare with A Trous filtering
+__global__ void gaussianFilter(glm::ivec2 resolution, glm::vec3* image, glm::vec3* denoised_image,
+							   GBufferPixel* gBuffer, float* filter, const int filter_size)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y)
+	{
+		int index = x + (y * resolution.x);
+		int cnt = 0;
+		int half_size = filter_size / 2;
+
+		glm::vec3 sum;
+		for (int i = -half_size; i <= half_size; i++)
+		{
+			for (int j = -half_size; j <= half_size; j++)
+			{
+				int cur_x = glm::clamp(x + i, 0, resolution.x - 1);
+				int cur_y = glm::clamp(y + j, 0, resolution.y - 1);
+				int cur_index = cur_x + (cur_y * resolution.x);
+				sum += filter[cnt] * image[cur_index];
+			}
+		}
+
+		denoised_image[index] = sum;
+	}
+}
+
+// The edge stopping of A Trous filtering
+__global__ void atrousFilter(glm::ivec2 resolution, int atrous_iter, glm::vec3* image, glm::vec3* denoised_image, 
 							 GBufferPixel* gBuffer, float* filter, 
 							 const float c_phi, const float n_phi, const float p_phi)
 {
@@ -153,7 +179,7 @@ __global__ void edgeStopping(glm::ivec2 resolution, int atrous_iter, glm::vec3* 
 }
 
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) 
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, const int type)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -163,17 +189,29 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 		float timeToIntersect = gBuffer[index].t * 255.f;
 		
 		pbo[index].w = 0;
-		pbo[index].x = abs(gBuffer[index].nor.x) * 255.f;
-		pbo[index].y = abs(gBuffer[index].nor.y) * 255.f;
-		pbo[index].z = abs(gBuffer[index].nor.z) * 255.f;
-		/*pbo[index].x = abs(gBuffer[index].pos.x) * 25.f;
-		pbo[index].y = abs(gBuffer[index].pos.y) * 25.f;
-		pbo[index].z = abs(gBuffer[index].pos.z) * 25.f;*/
+		if (type == 0)
+		{
+			pbo[index].x = gBuffer[index].t * 255.f;
+			pbo[index].y = gBuffer[index].t * 255.f;
+			pbo[index].z = gBuffer[index].t * 255.f;
+		}
+		else if (type == 1)
+		{
+			pbo[index].x = abs(gBuffer[index].pos.x) * 25.f;
+			pbo[index].y = abs(gBuffer[index].pos.y) * 25.f;
+			pbo[index].z = abs(gBuffer[index].pos.z) * 25.f;
+		}
+		else
+		{
+			pbo[index].x = abs(gBuffer[index].nor.x) * 255.f;
+			pbo[index].y = abs(gBuffer[index].nor.y) * 255.f;
+			pbo[index].z = abs(gBuffer[index].nor.z) * 255.f;
+		}
 	}
 }
 
 static float gpu_time_accumulator = 0.0f;
-static float atrous_filter[25] = {1.f / 256, 1.f / 64, 3.f / 128, 1.f / 64, 1.f / 256,
+static float atrous_kernel[25] = {1.f / 256, 1.f / 64, 3.f / 128, 1.f / 64, 1.f / 256,
 								  1.f / 64,  1.f / 16, 3.f / 32,  1.f / 16, 1.f / 64,
 								  3.f / 128, 3.f / 32, 9.f / 64,  3.f / 32, 3.f / 128,
 								  1.f / 64,  1.f / 16, 3.f / 32,  1.f / 16, 1.f / 64,
@@ -212,7 +250,9 @@ static cudaTextureObject_t* dev_gltf_tex_objs = nullptr;
 static GBufferPixel* dev_gBuffer = nullptr;
 static glm::vec3* dev_denoised_image = nullptr;
 static glm::vec3* dev_temp_image = nullptr;
-static float* dev_atrous_filter = nullptr;
+static float* dev_atrous_kernel = nullptr;
+static float* dev_gaussian_kernel = nullptr;
+
 
 void pathtraceInit(Scene* scene) 
 {
@@ -261,8 +301,13 @@ void pathtraceInit(Scene* scene)
 	cudaMalloc(&dev_temp_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_temp_image, 0, pixelcount * sizeof(glm::vec3));
 
-	cudaMalloc(&dev_atrous_filter, 25 * sizeof(float));
-	cudaMemcpy(dev_atrous_filter, atrous_filter, 25 * sizeof(float), cudaMemcpyKind::cudaMemcpyHostToDevice);
+	cudaMalloc(&dev_atrous_kernel, 25 * sizeof(float));
+	cudaMemcpy(dev_atrous_kernel, atrous_kernel, 25 * sizeof(float), cudaMemcpyKind::cudaMemcpyHostToDevice);
+
+	std::vector<float> gaussian_kernel;
+	utilityCore::computeGaussianKernel(gaussian_kernel, 17, 15);
+	cudaMalloc(&dev_gaussian_kernel, gaussian_kernel.size() * sizeof(float));
+	cudaMemcpy(dev_gaussian_kernel, gaussian_kernel.data(), gaussian_kernel.size() * sizeof(float), cudaMemcpyKind::cudaMemcpyHostToDevice);
 	
 	cudaEventCreate(&iter_event_start);
 	cudaEventCreate(&iter_event_end);
@@ -282,7 +327,8 @@ void pathtraceFree(Scene* scene)
 	cudaFree(dev_gBuffer);
 	cudaFree(dev_denoised_image);
 	cudaFree(dev_temp_image);
-	cudaFree(dev_atrous_filter);
+	cudaFree(dev_atrous_kernel);
+	cudaFree(dev_gaussian_kernel);
 
 	// Clean up those extra device variables 
 	cudaFree(dev_first_paths);
@@ -928,7 +974,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 }
 
 // This kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo) {
+void showGBuffer(uchar4* pbo, const int type) {
 	const Camera& cam = hst_scene->state.camera;
 	const dim3 blockSize2d(8, 8);
 	const dim3 blocksPerGrid2d(
@@ -936,7 +982,7 @@ void showGBuffer(uchar4* pbo) {
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
 	// Process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer, type);
 }
 
 void showImage(uchar4* pbo, int iter, bool denoised)
@@ -947,6 +993,7 @@ void showImage(uchar4* pbo, int iter, bool denoised)
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
 	// Send results to OpenGL buffer for rendering
 	if (denoised)
 	{
@@ -958,7 +1005,7 @@ void showImage(uchar4* pbo, int iter, bool denoised)
 	}
 }
 
-void denoise(uchar4* pbo, int iter, int atrous_total_num_iters, float c_phi, float n_phi, float p_phi)
+void denoise(uchar4* pbo, int iter, int atrous_total_num_iters, float c_phi, float n_phi, float p_phi, int denoising_type)
 {
 	// Compute averages of color, position and normal
 	const Camera& cam = hst_scene->state.camera;
@@ -968,14 +1015,22 @@ void denoise(uchar4* pbo, int iter, int atrous_total_num_iters, float c_phi, flo
 	const dim3 blocksPerGrid2d((cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
-	copyImage << <blocksPerGrid2d, blockSize2d >> > (iter, cam.resolution, dev_image, dev_temp_image);
-	for (int i = 0; i < atrous_total_num_iters; i++)
+	copyRGBImage << <blocksPerGrid2d, blockSize2d >> > (iter, cam.resolution, dev_image, dev_temp_image);
+	if (denoising_type == 0)
 	{
-		edgeStopping << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, i, dev_temp_image, dev_denoised_image,
-			dev_gBuffer, dev_atrous_filter, c_phi, n_phi, p_phi);
+		for (int i = 0; i < atrous_total_num_iters; i++)
+		{
+			atrousFilter << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, i, dev_temp_image, dev_denoised_image,
+				dev_gBuffer, dev_atrous_kernel, c_phi, n_phi, p_phi);
 
+			std::swap(dev_temp_image, dev_denoised_image);
+			c_phi /= 2; n_phi /= 2; p_phi /= 2;
+		}
 		std::swap(dev_temp_image, dev_denoised_image);
-		c_phi /= 2; n_phi /= 2; p_phi /= 2;
 	}
-	std::swap(dev_temp_image, dev_denoised_image);
+	else
+	{
+		gaussianFilter << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_temp_image, dev_denoised_image,
+															  dev_gBuffer, dev_gaussian_kernel, 17);
+	}
 }

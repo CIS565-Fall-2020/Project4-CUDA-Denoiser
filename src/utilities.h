@@ -28,4 +28,5 @@ namespace utilityCore {
     extern glm::mat4 buildTransformationMatrix(const glm::vec3& translation, const glm::vec3& rotation, const glm::vec3& scale);
     extern std::string convertIntToString(int number);
     extern std::istream& safeGetline(std::istream& is, std::string& t); // Thanks to http://stackoverflow.com/a/6089413
+    extern void computeGaussianKernel(std::vector<float>& kernel, const int kernel_size, const float sigma);
 }

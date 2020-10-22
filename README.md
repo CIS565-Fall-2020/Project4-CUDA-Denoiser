@@ -1,4 +1,3 @@
-=======
 CUDA Denoiser For CUDA Path Tracer
 ==================================
 
@@ -8,95 +7,87 @@ CUDA Denoiser For CUDA Path Tracer
   * [LinkedIn](https://www.linkedin.com/in/qiaosen-chen-725699141/), etc.
 * Tested on: Windows 10, i5-9400 @ 2.90GHz 16GB, GeForce RTX 2060 6GB (personal computer).
 
-## Summary
+## Features
 
-![pathtracing first demo gif](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/pathtracing_first_demo.gif)
+- A Trous Denoiser
+- Gaussian Filter (extra credit)
 
-### Features
+## Denoised Results
 
-- Ray sorting by material
-- Ideal Diffuse Shading & Bounce
-- Perfect Specular Reflection
-- Stream Compaction
-- Cache first bounce  
-- Refraction with Frensel effects using [Schlick's approximation](https://en.wikipedia.org/wiki/Schlick's_approximation).
-- Physically-based depth-of-field
-- Stochastic Sampled Antialiasing
-- Arbitrary mesh loading and rendering glTF files with toggleable bounding volume intersection culling
-- Better hemisphere sampling methods
-- Direct lighting
-- Motion blur by averaging samples at different times in the animation (Extra Credit)
+- [Cornell Scene](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell.txt)
 
-### Rendered Images
+  ![Cornell Scene](./img/cornell_denoised_comparison.png)
 
-- **Specular surface reflection & Diffuse surface reflection & Refraction**
+- [Cornell_sdf Scene](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_sdf.txt)
 
-  | Specular Surface                                             | Diffuse Surface                                              | Refraction                                                   |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/cornell.2020-09-30_19-21-14z.5000samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/cornell.2020-09-30_19-28-44z.5000samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell_glassball.2020-10-08_03-59-42z.5000samp.png) |
-
-- **glTF mesh loading**
-
-  | Venus                                                        | Spear Bearer                                                 | Sparta                                                       |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_01-36-04z.4948samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_01-14-21z.5000samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_02-02-34z.5000samp.png) |
-
-- **Physically-based depth-of-field (Focal Distance = 10)**
-
-  | No Depth-of-fieldLens Radius                                 | With Depth-of-fieldLens Radius                               |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-07_19-30-29z.5000samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-08_20-37-26z.5000samp.png) |
-
-- **Stochastic Sampled Antialiasing**
-
-  | With Anti-Aliasing                                           | Without Anti-Aliasing                                        |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/Anti.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/NoAnti.png) |
-
-- **Stratified sampling method**
-
-  | Random sampling                                              | Stratified sampling                                          |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-09_07-59-43z.25samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-09_08-00-45z.25samp.png) |
-
-  It's hard to find out some obvious differences between the naive random sampling and the stratified sampling.
-
-- **Direct Lighting**
-
-  | Indirect Lighting                                            | Direct Lighting                                              |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_03-37-27z.4147samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_03-43-41z.726samp.png) |
-
-- **Motion Blur**
-
-  | Without Motion Blur                                          | With Motion Blur                                             |
-  | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_03-37-27z.4147samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-10_03-31-35z.4226samp.png) |
+  ![Cornell_sdf Scene](./img/cornell_sdf_denoised_comparison.png)
 
 ## Performance Analysis
 
-I used the [scene](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/scenes/cornell.txt), a Cornell box with a specular sphere, to do the following test. With the function ```cudaEventElapsedTime()``` provided by *cuda_runtime_api.h*, I could compute how long GPU takes to do pathtracing iterations by creating two ```cudaEvent_t``` variables, ```iter_event_start``` and ```iter_event_start```, one to record the start time of an iteration and the other to record the end time. After each iteration, I added the running time of this iteration to a variable ```gpu_time_accumulator```, to accumulate the total time of all the iterations. Finally, I could get the average time of each iteration.
+### The extra time denoising adds to the renders
 
-- Not Sort VS Sort Based on Materials
+| [cornell](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell.txt) | [cornell_ceiling_light](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_ceiling_light.txt) | [cornell_glassball](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_glassball.txt) | [cornell_mjolnir](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_mjolnir.txt) |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| ![denoised_cornell](./img/denoised_cornell.png)              | ![./img/denoised_cornell_ceiling_light](./img/denoised_cornell_ceilling_light.png) | ![denoised_cornell_glassball](./img/denoised_cornell_glassball.png) | ![denoised_cornell_mjolnir](./img/denoised_cornell_mjolnir.png) |
 
-  ![Material Sort VS Not Sort Pic](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/performance_inset_%20materialsort_comp.png)
+![Running Time of 100 Iterations between Render with and without Denoiser](./img/Running Time of 100 Iterations between Render with and without Denoiser.png)
 
-  Not using sorting algorithm gets a much better performance than the one using sorting algorithm. In fact, using ```thrust::sort_by_key``` to make ```pathSegments``` with the same material are contiguous in memory would takes double time to finish each iteration. In my opinion, this result may be due to that very few materials are used in the scene. Only 5 materials are used at this test, so sorting ```pathSegments``` according to their materials consumes more resources and takes more time.
+As we can see from the above table, the render with denoiser actually takes a little bit more time to run 100 iterations than the render without denoiser. It's reasonable to spend more time to run extra 3 iteration to compute the A Trous filtering, but the difference in running time is very small, so the Edge-Avoiding A-Trous Wavelet Transform algorithm is very efficient.
 
-- Not Cache VS First Bounce Cache
+### The influences of denoiser on the number of iterations
 
-  ![Cache VS Not Cache Pic](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/performance_inset_%20cache_comp.png)  
+| [cornell](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell.txt) with Denoiser Using 100 Iters | [cornell](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell.txt) with Denoiser Using 300 Iters | [cornell](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell.txt) without Denoiser Using 1000 Iters |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| ![cornell with Denoiser Using 100 Iters](./img/cornell_denoising_100iters.png) | ![cornell with Denoiser Using 300 Iters](./img/cornell_denoising_300iters.png) | ![cornell without Denoiser Using 1000 Iters](./img/cornell_1000iters.png) |
+| [cornell_glassball](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_glassball.txt) with Denoiser Using 100 Iters | [cornell_glassball](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_glassball.txt) with Denoiser Using 300 Iters | [cornell_glassball](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_glassball.txt) without Denoiser Using 1000 Iters |
+| ![cornell_glassball with Denoiser Using 100 Iters](./img/cornell_glassball_denoising_100iters.png) | ![cornell_glassball with Denoiser Using 300 Iters](./img/cornell_glassball_denoising_300iters.png) | ![cornell_glassball without Denoiser Using 1000 Iters](./img/cornell_glassball_1000iters.png) |
 
-  As we can see, caching the data computed in the first bounce for later iterations achieves a better performance, although it only takes a very few milliseconds less than the one which doesn't store the first bounce. Besides, it's obvious that the running time of each iteration increases as the depth increases.
+As the [project Introduction](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/INSTRUCTION.md) pointing out,  "acceptably smooth" is subjective. So I choose the images without being denoised as the evaluation standard, although there still exists some noise in those image after 1000 iteration. There are still a lot of blurred area can be seen in the denoised images after 100 iterations. Comparing with the above 2 groups of images, I think the denoised images output by the render after 300 iterations have the best performance and they show the "acceptably smooth" results. Thus, in my point of view, the render with denoiser can take less 70% of iterations than the original render to get smooth output.
 
-- **Not Bounding Box VS Bounding Box Intersection Culling**
+### The influences of denoiser on the runtime at different resolutions
 
-  For the [Venus scene](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/scenes/cornell_venus.txt), apparently the situation with bounding box intersection culling intersection outperforms the situation without bounding box.
+![Running Time of 100 Iterations at Different Resolutions](./img/Running Time of 100 Iterations at Different Resolutions.png)
 
-  ![Not Bounding Box VS Bounding Box Intersection Culling](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/performance_inset_%20bbox_comp.png)
+Apparently, larger resolution means more running time. From the above char, we know that denoiser almost doesn't have any influences on the runtime at different resolutions.
 
-## Bloopers
+###  Effectiveness of denoiser on the different materials
 
-| Strange direct lighting                                      | Incorrect mesh surface normal calculation                    |
+| [cornell_diff_mats](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_diff_mats.txt) with Denoiser Using 100 Iters | [cornell_diff_mats](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_diff_mats.txt) with Denoiser Using 300 Iters | [cornell_diff_mats](https://github.com/giaosame/Project4-CUDA-Denoiser/blob/base-code/scenes/cornell_diff_mats.txt) without Denoiser Using 1000 Iters |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| ![cornell_diff_mats_denoised_100iters](./img/cornell_diff_mats_denoised_100iters.png) | ![cornell_diff_mats_denoised_300iters](./img/cornell_diff_mats_denoised_300iters.png) | ![cornell_diff_mats_1000iters](./img/cornell_diff_mats_1000iters.png) |
+
+The denoiser has a great performance on those materials showing a smooth surface, such as specular material and glass material, even the rendered images after running the program 100 iterations shows the "acceptably smooth" surfaces. However, the denoiser doesn't do a good job on the soft shadows on the diffuse material, if the number of iterations is not large enough. Because the filter will blur the surrounding pixels, the soft-shadow effect will also be blurred so that a gradual stratification of shadow cannot be seen very clearly, at this situation, running the denoiser with more iterations, such as 300 iterations, can improve the soft-shadow effect greatly.
+
+![cornell_mjolnir_diff_mat](./img/cornell_mjolnir_diff_mat.png)
+
+However, the smoothing effect brought by denoiser is absolutely a disaster for materials with texture mapping. The details of textures will be blurred so that no interesting texture details can be seen from the denoised images.
+
+### Visual results and performance for varying filter sizes
+
+| 1 x 1                                                        | 5 x 5                                                        | 17 x 17                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| ![Denoiser with 1x1 filter](./img/cornell_denoising_100iters_1_1.png) | ![Denoiser with 5x5 filter](./img/cornell_denoising_100iters_5_5.png) | ![Denoiser with 17x17 filter](./img/cornell_denoising_100iters.png) |
+| **33 x 33**                                                  | **65 x 65**                                                  | **129 x 129**                                                |
+| ![Denoiser with 33x33 filter](./img/cornell_denoising_100iters_33_33.png) | ![Denoiser with 65x65 filter](./img/cornell_denoising_100iters_65_65.png) | ![Denoiser with 129x129 filter](./img/cornell_denoising_100iters_129_129.png) |
+
+If the filter size is small, for example less than 17 x 17, i.e., use fewer than 3 iterations to call the edge stopping function, the denoising is not effective, the images are still filled with grains, because of the small blurred area. Comparing the usual filter size 17 x 17, those images denoised with larger filter size don't show a great improvement, and from the following chart we can know that the difference in filter size don't have a impact on running time, so it's feasible and reasonable to choose 17 x 17 as the A Trous filter size.
+
+![Runtime of Varying Filter Sizes Rendered in the Basic Cornell Scene](./img/Runtime of Varying Filter Sizes Rendered in the Basic Cornell Scene.png)
+
+### A-Trous filtering and Gaussian filtering Comparison
+
+| A-Trous Filtering Result                                     | Gaussian Filtering Result                                    |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-09_00-32-44z.5000samp.png) | ![](https://github.com/giaosame/Project3-CUDA-Path-Tracer/blob/master/img/rendered_images/cornell.2020-10-09_23-15-50z.6samp.png) |
+| ![A-Trous Filtering Result](./img/cornell_denoising_100iters.png) | ![Gaussian Filtering Result](./img/cornell_denoising_100iters_gaussian.png) |
+| ![A-Trous Filtering Result of cornell_ceiling_light](./img/denoised_cornell_ceilling_light.png) | ![Gaussian Filtering Result of denoised_cornell_ceilling_light](./img/denoised_cornell_ceilling_light_gaussian.png) |
+| ![A-Trous Filtering Result of cornell_glassball](./img/denoised_cornell_glassball.png) | ![Gaussian Filtering Result of cornell_glassball](./img/denoised_cornell_glassball_gaussian.png) |
+
+![A-Trous filtering and Gaussian filtering Comparison in Runtime](./img/A-Trous filtering and Gaussian filtering Comparison in Runtime.png)
+
+I implemented the basic Gaussian filtering with kernel size 17 x 17 and $\sigma$ = 15, which just simply blurs the image, as we can see. The Gaussian filtering only outputs a blurred images without details and take a little bit more time than A-Trous filtering, so A-Trous definitely outperforms Gaussian filtering. 
+
+## References
+
+- [Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering](https://jo.dreggn.org/home/2010_atrous.pdf)
+- ocornut/imgui - https://github.com/ocornut/imgui
+- Gaussian filter - https://en.wikipedia.org/wiki/Gaussian_blur 
