@@ -5,7 +5,35 @@ CUDA Path Tracer
 
 * Weiyu Du
 * Tested on: CETS Virtual Lab
+### Part 3
+### Denoiser
+Left: denoised image; Right: original image. (iteration=20)
 
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=300/></nobr>
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/original_20.png" width=300/></nobr>
+
+### Performance Analysis
+1. From the results above, we see that with denoising, we obtain an acceptably smooth results in 20 iterations, while without denoising, we need about 1000 iterations.
+
+2. From the table below, we see the run time per iteration nearly doubled with denoising.
+
+|                        | with denoising | without denoising |
+| ---                    | ---            | ---               |
+| Run Time Per Iteration | 120.964        |  58.2717          |
+
+3. Denoising is more effective on object with diffuse material then reflective or refractive materials.
+
+|                        | 20             | 40                | 60      | 80      |
+| ---                    | ---            | ---               | ---     | ---     |
+| Run Time Per Iteration | 104.181        |  120.628          | 120.434 | 119.834 |
+| Visual Result          |    <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>     |      <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>      |  <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>  | <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>|
+
+how it impacts runtime at different resolutions
+
+
+Also compare visual results and performance for varying filter sizes.
+
+Be sure to compare across different scenes as well - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
 ### Part 2
 ### Refraction
 Refraction rendering with Frensel effects using Schlick's approximation
