@@ -26,7 +26,7 @@ Left: denoised image; Right: original image. (iteration=20)
 |                        | 20             | 40                | 60      | 80      |
 | ---                    | ---            | ---               | ---     | ---     |
 | Run Time Per Iteration | 104.181        |  120.628          | 120.434 | 119.834 |
-| Visual Result          |    <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>     |      <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>      |  <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>  | <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=80/>|
+| Visual Result          |    <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_20.png" width=120/>     |      <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_40.png" width=120/>      |  <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_60.png" width=120/>  | <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/denoised_80.png" width=120/>|
 
 how it impacts runtime at different resolutions
 
