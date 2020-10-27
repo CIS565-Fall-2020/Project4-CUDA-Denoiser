@@ -23,17 +23,24 @@ Left: denoised image; Right: original image. (iteration=20)
 
 3. Denoising is more effective on object with diffuse material then reflective or refractive materials.
 
-|                        | 20             | 40                | 60      | 80      |
-| ---                    | ---            | ---               | ---     | ---     |
-| Run Time Per Iteration | 104.181        |  120.628          | 120.434 | 119.834 |
-| Visual Result          |    <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_20.png" width=150/>     |      <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_40.png" width=150/>      |  <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_60.png" width=150/>  | <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_80.png" width=150/>|
+4. We observe that visual results improve greatly from filtersize=10 to 20 and from 20 to 40. At smaller filtersize, the image is less smooth and we can see blocks of color. The image quality is stable after filtersize=40. 
 
+We observe an increase in run time per iteration as we increase filtersize. However, the increase becomes smaller when filtersize is large. 
+
+|                        | 10             | 20                | 40      | 80      |
+| ---                    | ---            | ---               | ---     | ---     |
+| Run Time Per Iteration |   91.114      |    104.181        | 120.628 | 122.903 |
+| Visual Result          |    <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_10.png" width=150/>     |      <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_20.png" width=150/>      |  <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_40.png" width=150/>  | <img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/filter_80.png" width=150/>|
+
+5. Different scenes. Left: denoised image; Right: original image. (Iteration = 20, same parameter is used as the above cornell ceiling light scene.) We observe that we do not achieve as good of a denoised result as the cornel ceiling light scene. This may be because cornell ceiling light has a large light source. When the number of iterations is low, more pixels got filled in the ceiling light scene than in other two scenes. The original images from the two scenes are at a worse quality, therefore the denoised images are at a worse quality.
+
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/cornell_denoised.png" width=300/></nobr>
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/cornell_orig.png" width=300/></nobr>
+
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/refractive_denoised.png" width=300/></nobr>
+<nobr><img src="https://github.com/WeiyuDu/Project4-CUDA-Denoiser/blob/denoiser/img/refractive_orig.png" width=300/></nobr>
 how it impacts runtime at different resolutions
 
-
-Also compare visual results and performance for varying filter sizes.
-
-Be sure to compare across different scenes as well - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
 ### Part 2
 ### Refraction
 Refraction rendering with Frensel effects using Schlick's approximation
