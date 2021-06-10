@@ -13,8 +13,12 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "device_launch_parameters.h"
 
+#define visualizePos false
+#define isWeighted true
 #define ERRORCHECK 1
+
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -73,12 +77,23 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        float timeToIntersect = gBuffer[index].t * 256.0;
+        
+        float scale;
+        glm::vec3 buffer;
+
+        if (visualizePos) {
+            buffer = gBuffer[index].pos;
+            scale = 25.f;
+        }
+        else {
+            buffer = gBuffer[index].norm;
+            scale = 255.f;
+        }
 
         pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+        pbo[index].x = glm::clamp((int)glm::abs(buffer[0] * scale), 0, 255);
+        pbo[index].y = glm::clamp((int)glm::abs(buffer[1] * scale), 0, 255);
+        pbo[index].z = glm::clamp((int)glm::abs(buffer[2] * scale), 0, 255);
     }
 }
 
@@ -91,6 +106,7 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static glm::vec3* dev_filterBuffer = NULL;
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -114,6 +130,7 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+    cudaMalloc(&dev_filterBuffer, pixelcount * sizeof(glm::vec3));
 
     checkCUDAError("pathtraceInit");
 }
@@ -126,6 +143,7 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
+    cudaFree(dev_filterBuffer);
 
     checkCUDAError("pathtraceFree");
 }
@@ -148,7 +166,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 		PathSegment & segment = pathSegments[index];
 
 		segment.ray.origin = cam.position;
-    segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
 
 		segment.ray.direction = glm::normalize(cam.view
 			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
@@ -281,7 +299,16 @@ __global__ void generateGBuffer (
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+      float delta = shadeableIntersections[idx].t;
+      if (delta < 0.f) {
+          gBuffer[idx].pos = glm::vec3(0, 0, 0);
+          gBuffer[idx].norm = glm::vec3(0, 0, 0);
+      }
+      else {
+          gBuffer[idx].pos = pathSegments[idx].ray.origin + (pathSegments[idx].ray.direction * shadeableIntersections[idx].t);
+          gBuffer[idx].norm = shadeableIntersections[idx].surfaceNormal;
+      }
+
   }
 }
 
@@ -424,10 +451,129 @@ void showGBuffer(uchar4* pbo) {
 void showImage(uchar4* pbo, int iter) {
 const Camera &cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+    const dim3 blocksPerGrid2d((cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x, (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+}
+
+__device__ float findWeight(glm::vec3 w1, glm::vec3 w2, float weight) {
+    return glm::exp(-1.f * (glm::length(w1 - w2) / weight));
+}
+
+__global__ void atrous_unweighted(int stepSize, glm::ivec2 res, glm::vec3* in, glm::vec3* out) {
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+    if (x >= res.x || y >= res.y) {
+        return;
+    }
+
+    glm::vec3 final{ 0,0,0 };
+    float kernel[5] { 1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f / 4.f, 1.f / 16.f };
+
+    for (int i = -2; i <= 2; i++) {
+        int tempX = x + i * stepSize;
+
+        if (tempX >= res.x) {
+            break;
+        }
+
+        if (tempX < 0) {
+            continue;
+        }
+
+        for (int j = -1; j <= 2; j++) {
+            int tempY = y + j * stepSize;
+            if (tempY < 0) continue;
+            if (tempY >= res.y) break;
+            int newIdx = tempX + (tempY * res.x);
+
+            final += kernel[i + 2] * kernel[j + 2] * in[newIdx];
+        }
+    }
+
+    out[x + (y * res.x)] = final;
+}
+
+
+__global__ void atrous_weighted(int step, glm::ivec2 res, float colWeight, float normWeight, float posWeight, GBufferPixel* gBuffer, glm::vec3* in, glm::vec3* out) {
+
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    if (x >= res.x || y >= res.y) {
+        return;
+    }
+
+    int idx = x + (y * res.x);
+    glm::vec3 centerPos = gBuffer[idx].pos;
+    glm::vec3 centerNorm = gBuffer[idx].norm;
+    glm::vec3 centerCol = in[idx];
+
+    glm::vec3 result{ 0,0,0 };
+    float kernel[5]{ 1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f / 4.f, 1.f / 16.f };
+    
+    float aggregateScale = 0;
+    
+    for (int i = -2; i <= 2; i++) {
+        int new_x = x + i * step;
+        if (new_x < 0) {
+            continue;
+        }
+
+        if (new_x >= res.x) {
+            break;
+        }
+
+        for (int j = -1; j <= 2; j++) {
+            int new_y = y + j * step;
+
+            if (new_y < 0) {
+                continue;
+            }
+
+            if (new_y >= res.y) {
+                break;
+            }
+
+            int newIdx = new_x + (new_y * res.x);
+            float w = findWeight(centerPos, gBuffer[newIdx].pos, posWeight) + findWeight(centerNorm, gBuffer[newIdx].norm, normWeight) + findWeight(centerCol, in[newIdx], colWeight) * kernel[i + 2] * kernel[j + 2];
+
+            aggregateScale += w;
+            result += w * in[newIdx];
+        }
+    }
+
+    out[idx] = result / aggregateScale;
+}
+
+void denoise(int size, float colWeight, float normWeight, float posWeight) {
+
+    if (size < 5 || colWeight == 0 || normWeight == 0 || posWeight == 0) {
+        return;
+    }
+    int it = std::log2(size * 0.4f);
+
+    const Camera& cam = hst_scene->state.camera;
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d((cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x, (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+
+    glm::ivec2 camRes = cam.resolution;
+    for (int i = 0; i < it; i++) {
+        int step = std::pow(2, i);
+        if (isWeighted) {
+            atrous_weighted << <blocksPerGrid2d, blockSize2d >> > (step, camRes, colWeight, normWeight, posWeight, dev_gBuffer, dev_image, dev_filterBuffer);
+        }
+        else {
+            atrous_unweighted << <blocksPerGrid2d, blockSize2d >> > (step, camRes, dev_image, dev_filterBuffer);
+        }
+
+        glm::vec3* temp = dev_image;
+        dev_image = dev_filterBuffer;
+        dev_filterBuffer = temp;
+    }
+
+    const int count = cam.resolution.x * cam.resolution.y;
+    cudaMemcpy(hst_scene->state.image.data(), dev_image, count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
